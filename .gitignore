@@ -1,6 +1,7 @@
 # dependencies (bun install)
 node_modules
 *.db
+static
 
 # output
 out

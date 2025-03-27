@@ -1,6 +1,9 @@
 const puppeteer = require("puppeteer");
 import * as db from "./db/db";
 import * as bcrypt from "bcryptjs";
+import { mkdir } from "node:fs/promises";
+
+await mkdir("./static/buttons", { recursive: true });
 
 function hashImage(image: Base64URLString): Base64URLString {
     return bcrypt.hashSync(image, 10);
