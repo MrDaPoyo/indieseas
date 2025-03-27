@@ -1,3 +1,4 @@
+import { relations } from "drizzle-orm";
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 
 export const buttons = sqliteTable("buttons", {
@@ -8,6 +9,14 @@ export const buttons = sqliteTable("buttons", {
   hash: text().unique().notNull(),
   image: text().notNull(),
   src: text().notNull(),
+});
+
+export const scrapedURLs = sqliteTable("scrapedURLs", {
+  id: integer("id").primaryKey(),
+  url: text().notNull(),
+  scraped_date: integer(),
+  hash: text().unique().notNull(),
+  buttons: integer("buttons").notNull().references(() => buttons.id),
 });
 
 export type Button = {

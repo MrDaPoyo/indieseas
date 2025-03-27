@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import * as schema from "./schema";
 
 const sqlite = new Database("indiesearch.db");
-export let db = drizzle(sqlite, { schema: { buttons: schema.buttons } });
+export let db = drizzle(sqlite, { schema: schema });
 
 export function retrieveAllButtons() {
     try {
@@ -16,7 +16,7 @@ export function retrieveAllButtons() {
 export function insertButton(button: schema.Button) {
     try {
         db.insert(schema.buttons).values(button).then(() => {
-            console.log("Inserted button: " + button.hash);
+            console.log("Inserted button: " + button.hash, Bun.color("black", "ansi"));
         });
         return true;
     } catch (error) {
