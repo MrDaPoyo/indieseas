@@ -1,5 +1,13 @@
-import { relations } from "drizzle-orm";
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { arrayContained, relations } from "drizzle-orm";
+import { sqliteTable, text, integer, SQLiteBoolean } from "drizzle-orm/sqlite-core";
+
+export const scrapedURLs = sqliteTable("scrapedURLs", {
+  id: integer("id").primaryKey(),
+  url: text().notNull(),
+  scraped_date: integer(),
+  scraped: integer({ mode: 'boolean' }).notNull().default(false),
+  hash: text().unique().notNull(),
+});
 
 export const buttons = sqliteTable("buttons", {
   id: integer("id").primaryKey(),
@@ -7,16 +15,9 @@ export const buttons = sqliteTable("buttons", {
   scraped_date: integer(),
   found_url: text().notNull(),
   hash: text().unique().notNull(),
-  image: text().notNull(),
+  image: text().unique().notNull(),
   src: text().notNull(),
-});
-
-export const scrapedURLs = sqliteTable("scrapedURLs", {
-  id: integer("id").primaryKey(),
-  url: text().notNull(),
-  scraped_date: integer(),
-  hash: text().unique().notNull(),
-  buttons: integer("buttons").notNull().references(() => buttons.id),
+  found_in_which_website: integer("id").references(() => scrapedURLs.id)
 });
 
 export type Button = {
@@ -26,4 +27,10 @@ export type Button = {
   found_url: string;
   hash: string;
   src: string;
+};
+
+export type ScrapedURL = {
+  url: string;
+  scraped_date: number | null;
+  hash: string;
 };
