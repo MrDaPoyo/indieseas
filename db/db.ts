@@ -42,13 +42,13 @@ export function retrieveURLsToScrape() {
     try {
         return db.query.scrapedURLs.findMany({ with: { scraped: false }});
     } catch (error) {
-        return false;
+        return 0;
     }
 }
 
 export function scrapedURL(url: string, hash: string) {
     try {
-        db.insert(schema.scrapedURLs).values({ url: url, buttons: 0, hash: hash }).then(() => {
+        db.insert(schema.scrapedURLs).values({ url: url, hash: hash, scraped: true }).then(() => {
             console.log("Totally Scraped URL: " + url, Bun.color("yellow", "ansi"));
         });
         return true;
