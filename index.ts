@@ -27,21 +27,48 @@ Bun.serve({
                 // Extract data
                 const data = await page.evaluate(() => {
                     // return Array.from(document.querySelectorAll("img")).map(img => img.src);
-                    return Array.from(document.querySelectorAll("img")).filter(img => img.width === 88 && img.height === 31).map(img => img.src);
+                    return Promise.all(
+                        Array.from(document.querySelectorAll("img"))
+                            .filter(img => img.width === 88 && img.height === 31)
+                            .map(async img => {
+                                const originalSrc = img.src;
+                                // For remote images, fetch and convert to base64
+                                const canvas = document.createElement('canvas');
+                                canvas.width = img.width;
+                                canvas.height = img.height;
+                                const ctx = canvas.getContext('2d');
+                                ctx.drawImage(img, 0, 0);
+                                try {
+                                    return {
+                                        imageData: canvas.toDataURL('image/png'),
+                                        src: originalSrc
+                                    };
+                                } catch (e) {
+                                    // If CORS prevents access, fall back to src
+                                    return {
+                                        imageData: originalSrc,
+                                        src: originalSrc
+                                    };
+                                }
+                            })
+                    );
                 });
 
                 if (data.length > 0) {
                     for (let i = 0; i < data.length; i++) {
-                        const image = data[i];
+                        const imageObj = data[i];
+                        const image = imageObj.imageData;
                         const hash = hashImage(image);
                         const button = {
                             hash: hash,
                             image: image,
+                            src: imageObj.src,
                             found_url: url,
                             scraped_date: Date.now(),
                             filename: hash + ".png",
                         };
-                        console.log(db.insertButton(button));
+                        console.log(button);
+                        await db.insertButton(button);
                     };
                 }
 

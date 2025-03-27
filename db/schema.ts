@@ -7,6 +7,7 @@ export const buttons = sqliteTable("buttons", {
   found_url: text().notNull(),
   hash: text().unique().notNull(),
   image: text().notNull(),
+  src: text().notNull(),
 });
 
 export type Button = {
@@ -15,4 +16,5 @@ export type Button = {
   scraped_date: number | null;
   found_url: string;
   hash: string;
+  src: string;
 };
