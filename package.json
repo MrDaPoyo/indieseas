@@ -1,0 +1,19 @@
+{
+  "name": "indiesearch",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "drizzle-kit": "^0.30.5"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.1",
+    "bcryptjs": "^3.0.2",
+    "drizzle-orm": "^0.41.0",
+    "puppeteer": "^24.4.0"
+  }
+}
