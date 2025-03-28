@@ -2,6 +2,7 @@
 node_modules
 *.db
 static
+scraped
 
 # output
 out

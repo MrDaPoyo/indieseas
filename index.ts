@@ -1,19 +1,24 @@
 import { sleep } from "bun";
 import * as db from "./db/db";
+import { mkdirSync } from "node:fs";
+
+mkdirSync("./scraped", { recursive: true });
 
 console.log("IndieSearch scraper running.");
 
 let currentlyScraping = [] as any;
-let maxConcurrentScrapers = 2;
 
 let urlsToScrape = await db.retrieveURLsToScrape();
 
-console.log("URLs to scrape:", urlsToScrape);
+console.log(
+	"URLs to scrape:",
+	Array.from(urlsToScrape).map((item) => item.url)
+);
 
 if (urlsToScrape.length === 0) {
-  console.log("No URLs to scrape. Adding a test URL.");
+	console.log("No URLs to scrape. Adding a test URL.");
 	await db.addURLToScrape("https://thinliquid.dev/buttons-galore");
-  urlsToScrape = await db.retrieveURLsToScrape();
+	urlsToScrape = await db.retrieveURLsToScrape();
 }
 
 if (Array.isArray(urlsToScrape)) {
@@ -48,7 +53,7 @@ if (Array.isArray(urlsToScrape)) {
 					);
 				}
 				await db.scrapedURL(url.url, db.hash(url.url));
-        urlsToScrape = await db.retrieveURLsToScrape();
+				urlsToScrape = await db.retrieveURLsToScrape();
 			});
 		}
 	}

@@ -18,14 +18,13 @@ export function retrieveAllButtons() {
     }
 }
 
-export function insertButton(button: schema.Button) {
+export async function insertButton(button: schema.Button) {
     try {
-        db.insert(schema.buttons).values(button).then(() => {
-            console.log("Inserted button: " + button.hash, Bun.color("black", "ansi"));
-        });
+        await db.insert(schema.buttons).values(button)
+        console.log("Inserted button: " + button.found_url);
         return true;
     } catch (error) {
-        console.error(error);
+        console.log("Button already saved: " + button.found_url);
         return false;
     }
 }
