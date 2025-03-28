@@ -37,9 +37,9 @@ export function retrieveAllScrapedURLs() {
     }
 }
 
-export function retrieveURLsToScrape() {
+export async function retrieveURLsToScrape() {
     try {
-        return db.query.scrapedURLs.findMany({ with: { scraped: false }});
+        return await db.query.scrapedURLs.findMany({ with: { scraped: false }});
     } catch (error) {
         return [];
     }
