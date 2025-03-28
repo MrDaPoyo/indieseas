@@ -40,9 +40,8 @@ if (Array.isArray(urlsToScrape)) {
 			});
 			scraperWorker.addEventListener("message", async (event) => {
 				if (event.data.success) {
-					console.log("Scraping completed for", url.url);
 					for (const button of event.data.buttonData) {
-						db.insertButton(button);
+						await db.insertButton(button);
 					}
 				} else {
 					scraperWorker.terminate();
@@ -52,7 +51,7 @@ if (Array.isArray(urlsToScrape)) {
 						event.data.error
 					);
 				}
-				await db.scrapedURL(url.url, db.hash(url.url));
+				await db.scrapedURL(url.url);
 				urlsToScrape = await db.retrieveURLsToScrape();
 			});
 		}

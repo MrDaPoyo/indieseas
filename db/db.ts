@@ -6,8 +6,8 @@ import * as schema from "./schema";
 const sqlite = new Database("indiesearch.db");
 export let db = drizzle(sqlite, { schema: schema });
 
-export function hash(image: string): string {
-    return bcrypt.hashSync(image, 10);
+export function hash(image: any): any {
+    return Bun.hash(image.toString());
 }
 
 export function retrieveAllButtons() {
@@ -20,11 +20,12 @@ export function retrieveAllButtons() {
 
 export async function insertButton(button: schema.Button) {
     try {
-        await db.insert(schema.buttons).values(button)
-        console.log("Inserted button: " + button.found_url);
+        console.log(await db.insert(schema.buttons).values(button).returning());
+        console.log("Inserted button: " + button.src);
         return true;
     } catch (error) {
-        console.log("Button already saved: " + button.found_url);
+        console.log(error);
+        console.log("Button already saved: " + button.src);
         return false;
     }
 }
@@ -45,9 +46,9 @@ export function retrieveURLsToScrape() {
     }
 }
 
-export function scrapedURL(url: string, hash: string) {
+export function scrapedURL(url: string) {
     try {
-        db.update(schema.scrapedURLs).set({url: url}).values({ scraped: true, scraped_date: new Date().getTime() })
+        db.update(schema.scrapedURLs).set({url: url}).values({ scraped: 1, scraped_date: new Date().getTime() })
         return true;
     } catch (error) {
         console.log("Already Scraped.");

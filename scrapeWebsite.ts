@@ -7,7 +7,7 @@ declare var self: Worker;
 console.log("Worker started");
 
 interface Button {
-	image?: string;
+	image?: any;
 	filename?: string;
 	scraped_date?: number | null;
 	found_url?: string;
@@ -38,7 +38,7 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 					src = new URL(src, url).href;
 				}
 
-				const button = await fetch(src);
+				let button = await fetch(src);
 
 				if (!button.ok) {
 					console.log("Failed to fetch image:", src);
@@ -52,6 +52,8 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 
 				const { width, height } = await getImageSize(temporaryFileName);
 
+                let image = Bun.file(temporaryFileName) as any; 
+
 				rm(temporaryFileName, { force: true }, (err) => {
 					if (err) {
 						console.error("Error deleting file:", err);
@@ -62,14 +64,11 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 					return;
 				}
 
-                const blob = await button.clone().blob();
-				const arrayBuffer = await blob.arrayBuffer();
-				const buffer = Buffer.from(arrayBuffer);
-				const image = buffer.toString("base64");
-				const filename = element.getAttribute("src") as string;
+                console.log("Image:", image);
+                const filename = element.getAttribute("src") as string;
 				const scraped_date = Date.now();
 				const found_url = url;
-				const hash = db.hash(image);
+				const hash = db.hash(image) as string;
 
 				const buttonData: Button = {
 					image,
@@ -84,7 +83,9 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 			},
 		} as any);
 
-		await response.text().then((html) => rewriter.transform(new Response(html)));
+		await response
+			.text()
+			.then((html) => rewriter.transform(new Response(html)));
 
 		return totalButtonData;
 	} catch (error) {
