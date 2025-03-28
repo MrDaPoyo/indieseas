@@ -1,32 +1,70 @@
-const puppeteer = require("puppeteer");
-import * as db from "./db/db";
-import * as bcrypt from "bcryptjs";
-
 declare var self: Worker;
 
-function scrapeEntireWebsite(url: string) {
-    console.log("Scraping: " + url);
-    puppeteer.launch({headless: 'shell'}).then(async (browser: any) => {
-        const page = await browser.newPage();
-        await page.goto(url);
-        const buttons = await page.evaluate(() => {
-            const buttons = [];
-            let elements = page.querySelectorAll("img");
-            for (let element of elements) {
-                if (element.src && element.width == 88 && element.height == 31) {
-                    buttons.push(element.src);
-                }
-            }
-            return buttons;
-        });
-        console.log(buttons);
-        await browser.close();
-    });
-}
-    
+console.log("Worker started");
 
-self.onmessage = (event: MessageEvent) => {
-    if (event.data.url) {
-        scrapeEntireWebsite(event.data.url);
+interface Button {
+  image?: string;
+  filename?: string;
+  scraped_date?: number | null;
+  found_url?: string;
+  hash?: string;
+  src?: string;
+};
+
+async function scrapeEntireWebsite(url: string): Promise<Button> {
+  let metadata: Button = {};
+  const response = await fetch(url);
+
+  const rewriter = new HTMLRewriter()
+    .on("img", {
+      async element(element) {
+        const src = element.getAttribute("src") as any;
+        const imageUrl = new URL(src, url);
+        console.log(JSON.stringify(imageUrl));
+        try {
+          const imageResponse = await fetch(imageUrl);
+          const imageBlob = await imageResponse.blob();
+          const reader = new FileReader();
+          reader.onload = () => {
+            const base64String = reader.result as string;
+            metadata = {
+              image: base64String,
+              filename: src.split("/").pop(), // Get the last part of the URL
+              scraped_date: Date.now(),
+              found_url: url,
+              hash: require("./db/db").hash(),
+              src: src,
+            };
+          };
+          reader.onerror = (error) => {
+            console.error("Error reading image:", error);
+          };
+          reader.readAsDataURL(imageBlob);
+        } catch (error) {
+          console.error("Error fetching image:", error);
+        }
+      }
+    });
+
+  // Process the response
+  await rewriter.transform(response).blob();
+
+  // Convert relative image URLs to absolute
+  if (metadata.image && !metadata.image.startsWith("http")) {
+    try {
+      metadata.image = new URL(metadata.image, url).href;
+    } catch {
+      // Keep the original URL if parsing fails
     }
+  }
+
+  return metadata;
+}
+
+self.onmessage = async (event: MessageEvent) => {
+  const buttons = await scrapeEntireWebsite(event.data);
+  console.log("Scraped", buttons);
+  postMessage(buttons);
+  console.log("Worker finished");
+  process.exit();
 };

@@ -3,7 +3,7 @@ import { sqliteTable, text, integer, SQLiteBoolean } from "drizzle-orm/sqlite-co
 
 export const scrapedURLs = sqliteTable("scrapedURLs", {
   id: integer("id").primaryKey(),
-  url: text().notNull(),
+  url: text().notNull().unique(),
   scraped_date: integer(),
   scraped: integer({ mode: 'boolean' }).notNull().default(false),
   hash: text().unique().notNull(),

@@ -42,18 +42,31 @@ export function retrieveURLsToScrape() {
     try {
         return db.query.scrapedURLs.findMany({ with: { scraped: false }});
     } catch (error) {
-        return 0;
+        return false;
     }
 }
 
 export function scrapedURL(url: string, hash: string) {
     try {
-        db.insert(schema.scrapedURLs).values({ url: url, hash: hash, scraped: true }).then(() => {
-            console.log("Totally Scraped URL: " + url, Bun.color("yellow", "ansi"));
-        });
+        db.update(schema.scrapedURLs).set({url: url}).values({ scraped: true, scraped_date: new Date().getTime() })
         return true;
     } catch (error) {
         console.log("Already Scraped.");
+        return false;
+    }
+}
+
+export function addURLToScrape(url: string) {
+    try {
+        db.insert(schema.scrapedURLs).values({ url: url, hash: hash(url), scraped: false }).then(() => {
+            console.log("Added URL to scrape: " + url, Bun.color("blue", "ansi"));
+        }).catch((error) => {
+            return false;
+        });
+        return true;
+    }
+    catch (error) {
+        console.error(error);
         return false;
     }
 }
