@@ -22,12 +22,6 @@ if (urlsToScrape.length === 0) {
 }
 
 if (Array.isArray(urlsToScrape)) {
-	for (const item of urlsToScrape) {
-		console.log("Gonna scrape", item.url);
-	}
-}
-
-if (Array.isArray(urlsToScrape)) {
 	console.log("Scraping", urlsToScrape.length, "URLs");
 	for await (const url of urlsToScrape) {
 		if (currentlyScraping.includes(url)) {

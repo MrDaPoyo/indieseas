@@ -1,5 +1,5 @@
 import { drizzle } from "drizzle-orm/bun-sqlite";
-import * as bcrypt from "bcryptjs";
+import { eq } from 'drizzle-orm';
 import { Database } from "bun:sqlite";
 import * as schema from "./schema";
 
@@ -24,7 +24,6 @@ export async function insertButton(button: schema.Button) {
         console.log("Inserted button: " + button.src);
         return true;
     } catch (error) {
-        console.log(error);
         console.log("Button already saved: " + button.src);
         return false;
     }
@@ -48,7 +47,10 @@ export function retrieveURLsToScrape() {
 
 export function scrapedURL(url: string) {
     try {
-        db.update(schema.scrapedURLs).set({url: url}).values({ scraped: 1, scraped_date: new Date().getTime() })
+        db.update(schema.scrapedURLs)
+          .set({ scraped: true, scraped_date: new Date().getTime() })
+          .where(eq(schema.scrapedURLs.url, url));
+        console.log("Scraped URL: " + url, Bun.color("green", "ansi"));
         return true;
     } catch (error) {
         console.log("Already Scraped.");

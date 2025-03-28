@@ -1,6 +1,5 @@
 import * as db from "./db/db";
-import sharp from "sharp";
-import { rm } from "node:fs";
+import { imageSize } from "image-size";
 
 declare var self: Worker;
 
@@ -15,8 +14,8 @@ interface Button {
 	src?: string;
 }
 
-async function getImageSize(path: string) {
-	const metadata = await sharp(path).metadata();
+async function getImageSize(buffer: Buffer): Promise<{ width: number; height: number }> {
+	const metadata = await imageSize(buffer);
 	return { width: metadata.width, height: metadata.height };
 }
 
@@ -44,34 +43,22 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 					console.log("Failed to fetch image:", src);
 					return;
 				}
-
-				const temporaryFileName = `./scraped/${
-					Math.random() * 10
-				}-button.png`;
-				await Bun.write(temporaryFileName, button);
-
-				const { width, height } = await getImageSize(temporaryFileName);
-
-                let image = Bun.file(temporaryFileName) as any; 
-
-				rm(temporaryFileName, { force: true }, (err) => {
-					if (err) {
-						console.error("Error deleting file:", err);
-					}
-				});
+                
+                let buttonBuffer = Buffer.from(await button.arrayBuffer())
+                
+				const { width, height } = await getImageSize(buttonBuffer);
 
 				if (!(width === 88 && height === 31)) {
 					return;
 				}
 
-                console.log("Image:", image);
                 const filename = element.getAttribute("src") as string;
 				const scraped_date = Date.now();
 				const found_url = url;
-				const hash = db.hash(image) as string;
+				const hash = db.hash(buttonBuffer) as string;
 
 				const buttonData: Button = {
-					image,
+					image: buttonBuffer,
 					filename,
 					scraped_date,
 					found_url,
