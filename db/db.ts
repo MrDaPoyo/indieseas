@@ -42,7 +42,7 @@ export function retrieveURLsToScrape() {
     try {
         return db.query.scrapedURLs.findMany({ with: { scraped: false }});
     } catch (error) {
-        return false;
+        return [];
     }
 }
 

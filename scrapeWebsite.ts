@@ -1,70 +1,90 @@
+import * as db from "./db/db";
+
 declare var self: Worker;
 
 console.log("Worker started");
 
 interface Button {
-  image?: string;
-  filename?: string;
-  scraped_date?: number | null;
-  found_url?: string;
-  hash?: string;
-  src?: string;
-};
+	image?: string;
+	filename?: string;
+	scraped_date?: number | null;
+	found_url?: string;
+	hash?: string;
+	src?: string;
+}
 
-async function scrapeEntireWebsite(url: string): Promise<Button> {
-  let metadata: Button = {};
-  const response = await fetch(url);
+async function scrapeEntireWebsite(url: string): Promise<Button[]> {
+	let totalButtonData: Button[] = [];
+	let buttonData: Button = {};
+	const response = await fetch(url);
+	if (!response.ok) {
+		postMessage({ success: false, error: "Failed to fetch the URL" });
+		process.exit();
+	}
+	console.log("Response status:", response.status);
+	try {
+		const rewriter = new HTMLRewriter()
+			.on("a > img", {
+				async element(element) {
+					var src = element.getAttribute("src") as any;
+                    if (src && !src.startsWith("http")) {
+                        src = new URL(src, url).href;
+                    }
+					const button = await fetch(
+						src
+					);
 
-  const rewriter = new HTMLRewriter()
-    .on("img", {
-      async element(element) {
-        const src = element.getAttribute("src") as any;
-        const imageUrl = new URL(src, url);
-        console.log(JSON.stringify(imageUrl));
-        try {
-          const imageResponse = await fetch(imageUrl);
-          const imageBlob = await imageResponse.blob();
-          const reader = new FileReader();
-          reader.onload = () => {
-            const base64String = reader.result as string;
-            metadata = {
-              image: base64String,
-              filename: src.split("/").pop(), // Get the last part of the URL
-              scraped_date: Date.now(),
-              found_url: url,
-              hash: require("./db/db").hash(),
-              src: src,
-            };
-          };
-          reader.onerror = (error) => {
-            console.error("Error reading image:", error);
-          };
-          reader.readAsDataURL(imageBlob);
-        } catch (error) {
-          console.error("Error fetching image:", error);
-        }
-      }
-    });
+					const blob = await button.blob();
+					const arrayBuffer = await blob.arrayBuffer();
+					const buffer = Buffer.from(arrayBuffer);
+					const filename = element.getAttribute("src") as string;
+					const scraped_date = Date.now();
+					const found_url = url;
+					const image = buffer.toString("base64");
+					const hash = db.hash(image);
+					buttonData = {
+						image,
+						filename,
+						scraped_date,
+						found_url,
+						hash,
+						src,
+					};
+                    totalButtonData.push(buttonData);
+				},
+			})
+			.on("a", {
+				async element(element) {
+					const href = element.getAttribute("href") as string;
+					if (href && !href.startsWith("http")) {
+						buttonData.image = new URL(href, url).href;
+					}
+				},
+			});
 
-  // Process the response
-  await rewriter.transform(response).blob();
+		// Process the response
+		await rewriter.transform(response).blob();
 
-  // Convert relative image URLs to absolute
-  if (metadata.image && !metadata.image.startsWith("http")) {
-    try {
-      metadata.image = new URL(metadata.image, url).href;
-    } catch {
-      // Keep the original URL if parsing fails
-    }
-  }
-
-  return metadata;
+		// Convert relative image URLs to absolute
+		if (buttonData.image && !buttonData.image.startsWith("http")) {
+			try {
+				buttonData.image = new URL(buttonData.image, url).href;
+			} catch {
+				// Keep the original URL if parsing fails
+			}
+		}
+		return totalButtonData;
+	} catch (error) {
+		console.error("Error during scraping:", error);
+		postMessage({ success: false, error: "Scraping failed" });
+		process.exit();
+	}
 }
 
 self.onmessage = async (event: MessageEvent) => {
-  const buttons = await scrapeEntireWebsite(event.data);
-  console.log("Scraped", buttons);
-  postMessage(buttons);
-  console.log("Worker finished");
-  process.exit();
+	console.log("Worker received message:", event.data.url);
+	const buttons = await scrapeEntireWebsite(event.data.url);
+	postMessage({ buttonData: buttons, success: true });
+	console.log("Worker finished");
+	process.exit();
 };
