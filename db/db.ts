@@ -39,18 +39,18 @@ export function retrieveAllScrapedURLs() {
 
 export async function retrieveURLsToScrape() {
     try {
-        return await db.query.scrapedURLs.findMany({ with: { scraped: false }});
+        return await db.query.scrapedURLs.findMany({ where: eq(schema.scrapedURLs.scraped, false) });
     } catch (error) {
         return [];
     }
 }
 
-export function scrapedURL(url: string) {
+export async function scrapedURL(url: string) {
     try {
-        db.update(schema.scrapedURLs)
+        await db.update(schema.scrapedURLs)
           .set({ scraped: true, scraped_date: new Date().getTime() })
           .where(eq(schema.scrapedURLs.url, url));
-        console.log("Scraped URL: " + url, Bun.color("green", "ansi"));
+        console.log("Scraped URL:", url);
         return true;
     } catch (error) {
         console.log("Already Scraped.");

@@ -5,6 +5,10 @@ declare var self: Worker;
 
 console.log("Worker started");
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 interface Button {
 	image?: any;
 	filename?: string;
@@ -85,71 +89,84 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 }
 
 async function scrapeEntireWebsite(url: string): Promise<Button[]> {
-	console.log("Starting to scrape entire website from:", url);
-	const visited = new Set<string>();
-	const toVisit = [url];
-	const allButtons: Button[] = [];
-	let pageCount = 0;
-	const maxPages = 20;
+    // Ensure URL is complete with scheme and host
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        // If it's a relative path starting with /, assume it's from the root of the domain
+        if (url.startsWith('/')) {
+            // Use a placeholder domain that will be replaced with the actual domain
+            url = `https://example.com${url}`;
+        } else {
+            // If it doesn't start with /, assume it's a domain without scheme
+            url = `https://${url}`;
+        }
+    }
 
-	while (toVisit.length > 0 && pageCount < maxPages) {
-		const currentUrl = toVisit.shift();
-		if (!currentUrl || visited.has(currentUrl)) continue;
+    console.log("Starting to scrape entire website from:", url);
+    const visited = new Set<string>();
+    const toVisit = [url];
+    const allButtons: Button[] = [];
+    let pageCount = 0;
+    const maxPages = 20;
 
-		visited.add(currentUrl);
-		pageCount++;
-		console.log(`Scraping page ${pageCount}/${maxPages}: ${currentUrl}`);
+    while (toVisit.length > 0 && pageCount < maxPages) {
+        sleep(1000)
+        const currentUrl = toVisit.shift();
+        if (!currentUrl || visited.has(currentUrl)) continue;
 
-		try {
-			// Scrape the current page for buttons
-			const buttons = await scrapeSinglePath(currentUrl);
-			allButtons.push(...buttons);
+        visited.add(currentUrl);
+        pageCount++;
+        console.log(`Scraping page ${pageCount}/${maxPages}: ${currentUrl}`);
 
-			// If this is the first page, extract links to visit next
-			if (pageCount === 1) {
-				const response = await fetch(currentUrl);
-				if (response.ok) {
-					const html = await response.text();
-					const linkRegex =
-						/<a\s+(?:[^>]*?\s+)?href="([^"]*)"[^>]*>/gi;
-					let match;
+        try {
+            // Scrape the current page for buttons
+            const buttons = await scrapeSinglePath(currentUrl);
+            allButtons.push(...buttons);
 
-					while ((match = linkRegex.exec(html)) !== null) {
-						let link = match[1].trim();
-						if (
-							!link ||
-							link.startsWith("#") ||
-							link.startsWith("javascript:")
-						)
-							continue;
+            // If this is the first page, extract links to visit next
+            if (pageCount === 1) {
+                const response = await fetch(currentUrl);
+                if (response.ok) {
+                    const html = await response.text();
+                    const linkRegex =
+                        /<a\s+(?:[^>]*?\s+)?href="([^"]*)"[^>]*>/gi;
+                    let match;
 
-						// Convert relative URLs to absolute because otherwise this wont work
-						if (!link.startsWith("http")) {
-							link = new URL(link, currentUrl).href;
-						}
+                    while ((match = linkRegex.exec(html)) !== null) {
+                        let link = match[1]?.trim();
+                        if (
+                            !link ||
+                            link.startsWith("#") ||
+                            link.startsWith("javascript:")
+                        )
+                            continue;
 
-						// Only , AND ONLY add if its from the same domain
-						const currentUrlObj = new URL(currentUrl);
-						const linkUrlObj = new URL(link);
+                        // Convert relative URLs to absolute because otherwise this wont work
+                        if (!link.startsWith("http")) {
+                            link = new URL(link, currentUrl).href;
+                        }
 
-						if (
-							currentUrlObj.hostname === linkUrlObj.hostname &&
-							!visited.has(link)
-						) {
-							toVisit.push(link);
-						}
-					}
-				}
-			}
-		} catch (error) {
-			console.error(`Error scraping ${currentUrl}:`, error);
-		}
-	}
+                        // Only , AND ONLY add if its from the same domain
+                        const currentUrlObj = new URL(currentUrl);
+                        const linkUrlObj = new URL(link);
 
-	console.log(
-		`Finished scraping ${pageCount} pages. Found ${allButtons.length} buttons.`
-	);
-	return allButtons;
+                        if (
+                            currentUrlObj.hostname === linkUrlObj.hostname &&
+                            !visited.has(link)
+                        ) {
+                            toVisit.push(link);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error(`Error scraping ${currentUrl}:`, error);
+        }
+    }
+
+    console.log(
+        `Finished scraping ${pageCount} pages. Found ${allButtons.length} buttons.`
+    );
+    return allButtons;
 }
 
 self.onmessage = async (event: MessageEvent) => {
