@@ -8,7 +8,7 @@ let maxConcurrentScrapers = 2;
 
 const urlsToScrape = await db.retrieveURLsToScrape();
 
-if (urlsToScrape) {
+if (!urlsToScrape) {
   await db.addURLToScrape("https://thinliquid.dev/buttons-galore");
 }
 
