@@ -20,7 +20,6 @@
     "drizzle-orm": "^0.41.0",
     "image-size": "^2.0.1",
     "jsdom": "^26.0.0",
-    "puppeteer": "^24.4.0",
-    "sharp": "^0.33.5"
+    "puppeteer": "^24.4.0"
   }
 }
