@@ -37,17 +37,19 @@ async function scrapeURL(url: string) {
     return;
   }
 
-  if (currentlyScraping.includes(url)) {
-    setTimeout(() => {
-      console.log("Already scraping:", url);
-    }, 1000);
+  const normalizedUrl = url.toLowerCase().trim();
+  
+  if (currentlyScraping.includes(normalizedUrl)) {
+    console.log("Already scraping:", normalizedUrl);
     return;
   }
-  currentlyScraping.push(url);
+  
+  currentlyScraping.push(normalizedUrl);
   console.log("Currently scraping:", currentlyScraping);
+  
   const scraperWorker = new Worker("./scrapeWebsite.ts");
 
-  scraperWorker.postMessage({ url: url });
+  scraperWorker.postMessage({ url: normalizedUrl });
   scraperWorker.onmessage = async (event) => {
     if (event.data.success) {
       const buttonData = event.data.buttonData;
@@ -62,6 +64,7 @@ async function scrapeURL(url: string) {
             const nextURL = new URL(button.links_to).hostname;
             await db.addURLToScrape(nextURL);
             if (
+              !currentlyScraping.includes(nextURL) &&
               !Array.from(await db.retrieveURLsToScrape()).some(
                 (item) => item.url === nextURL
               )
@@ -72,6 +75,7 @@ async function scrapeURL(url: string) {
           const nextURL = new URL(button.src).hostname;
           await db.addURLToScrape(nextURL);
           if (
+            !currentlyScraping.includes(nextURL) &&
             !Array.from(await db.retrieveURLsToScrape()).some(
               (item) => item.url === nextURL
             )
@@ -79,9 +83,9 @@ async function scrapeURL(url: string) {
             scrapeURL(nextURL);
             console.log("Adding URL to scrape:", button.src);
           }
-          await db.scrapedURL(url);
+          await db.scrapedURL(normalizedUrl);
           currentlyScraping = currentlyScraping.filter(
-            (item: any) => item !== url
+            (item: any) => item !== normalizedUrl
           );
           console.log("Currently scraping:", currentlyScraping);
         } else {
