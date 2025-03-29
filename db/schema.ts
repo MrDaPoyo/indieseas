@@ -22,7 +22,12 @@ export const buttons = sqliteTable("buttons", {
   hash: text().unique().notNull(),
   image: bytea,
   src: text().notNull(),
-  found_in_which_website: integer("id").references(() => scrapedURLs.url_id)
+});
+
+export const buttonWebsiteRelations = sqliteTable("button_website_relations", {
+  id: integer("id").primaryKey(),
+  button_id: integer("button_id").references(() => buttons.id).notNull(),
+  website_id: integer("website_id").references(() => scrapedURLs.url_id).notNull(),
 });
 
 export type Button = {
@@ -32,6 +37,7 @@ export type Button = {
   found_url: string;
   hash: string;
   src: string;
+  website_id?: number | null;
 };
 
 export type ScrapedURL = {

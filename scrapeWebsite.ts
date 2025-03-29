@@ -16,7 +16,8 @@ interface Button {
 	found_url?: string;
 	hash?: string;
 	src?: string;
-  links_to?: string | null; // Added links_to attribute
+	links_to?: string | null;
+	website_id?: number | null;
 }
 
 async function getImageSize(
@@ -35,64 +36,68 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 			process.exit();
 		}
 		console.log("Response status:", response.status);
-    const rewriter = new HTMLRewriter().on("img", {
-      async element(element: any) {
-        if (!element.hasAttribute("src")) return;
+		const rewriter = new HTMLRewriter().on("img", {
+			async element(element: any) {
+				if (!element.hasAttribute("src")) return;
 
-        // Extract image source
-        var src = element.getAttribute("src") as any;
-        if (src && !src.startsWith("http")) {
-          src = new URL(src, path).href;
-        }
+				// Extract image source
+				var src = element.getAttribute("src") as any;
+				if (src && !src.startsWith("http")) {
+					src = new URL(src, path).href;
+				}
 
-        // Check if the image is inside an <a> tag and get the href
-        let links_to = null;
-        const parentElement = element.parentElement;
-        if (parentElement && parentElement.tagName.toLowerCase() === 'a' && parentElement.hasAttribute('href')) {
-          links_to = parentElement.getAttribute('href');
-          // Convert relative URLs to absolute
-          if (links_to && !links_to.startsWith('http')) {
-            links_to = new URL(links_to, path).href;
-          }
-        }
+				// Check if the image is inside an <a> tag and get the href
+				let links_to = null;
+				const parentElement = element.parentElement;
+				if (
+					parentElement &&
+					parentElement.tagName.toLowerCase() === "a" &&
+					parentElement.hasAttribute("href")
+				) {
+					links_to = parentElement.getAttribute("href");
+					// Convert relative URLs to absolute
+					if (links_to && !links_to.startsWith("http")) {
+						links_to = new URL(links_to, path).href;
+					}
+				}
 
-        // Fetch the image
-        let button = await fetch(src);
-        if (!button.ok) {
-          console.log("Failed to fetch image:", src);
-          return;
-        }
+				// Fetch the image
+				let button = await fetch(src);
+				if (!button.ok) {
+					console.log("Failed to fetch image:", src);
+					return;
+				}
 
-        let buttonBuffer = Buffer.from(await button.arrayBuffer());
+				let buttonBuffer = Buffer.from(await button.arrayBuffer());
 
-        try {
-          const { width, height } = await getImageSize(buttonBuffer);
-          if (!(width === 88 && height === 31)) {
-            return;
-          }
-        } catch (error) {
-          console.log("Unsupported File Type");
-          return;
-        }
+				try {
+					const { width, height } = await getImageSize(buttonBuffer);
+					if (!(width === 88 && height === 31)) {
+						return;
+					}
+				} catch (error) {
+					console.log("Unsupported File Type");
+					return;
+				}
 
-        const filename = element.getAttribute("src") as string;
-        const scraped_date = Date.now();
-        const found_url = path;
-        const hash = db.hash(buttonBuffer) as string;
+				const filename = element.getAttribute("src") as string;
+				const scraped_date = Date.now();
+				const found_url = path;
+				const hash = db.hash(buttonBuffer) as string;
 
-        const buttonData: Button = {
-          image: buttonBuffer,
-          filename,
-          scraped_date,
-          found_url,
-          hash,
-          src,
-          links_to, // Add the links_to attribute
-        };
+				const buttonData: Button = {
+					image: buttonBuffer,
+					filename,
+					scraped_date,
+					found_url,
+					hash,
+					src,
+					links_to, // Add the links_to attribute
+				};
 
-        totalButtonData.push(buttonData);
-      },
-    });
+				totalButtonData.push(buttonData);
+			},
+		});
 
 		await response
 			.text()
@@ -190,6 +195,13 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 self.onmessage = async (event: MessageEvent) => {
 	console.log("Worker received message:", event.data.url);
 	const totalButtonData = await scrapeEntireWebsite(event.data.url);
+
+	const website_id = event.data.website_id;
+	
+	totalButtonData.forEach(button => {
+		button.website_id = website_id;
+	});
+	
 	postMessage({ buttonData: totalButtonData, success: true });
 	console.log("Worker finished");
 	process.exit();

@@ -31,7 +31,7 @@ if (urlsToScrape.length === 0) {
 	urlsToScrape = await db.retrieveURLsToScrape();
 }
 
-async function scrapeURL(url: string) {
+async function scrapeURL(url: string, websiteId?: number) {
 	if (currentlyScraping.length >= 30) {
 		setTimeout(() => {
 			scrapeURL(url);
@@ -51,7 +51,7 @@ async function scrapeURL(url: string) {
 
 	const scraperWorker = new Worker("./scrapeWebsite.ts");
 
-	scraperWorker.postMessage({ url: normalizedUrl });
+	scraperWorker.postMessage({ url: normalizedUrl, websiteId });
 	scraperWorker.onmessage = async (event) => {
 		if (event.data.success) {
 			const buttonData = event.data.buttonData;
@@ -66,8 +66,10 @@ async function scrapeURL(url: string) {
 						const nextURL = new URL(button.links_to).hostname;
 						await db.addURLToScrape(nextURL);
 					}
+
 					const nextURL = new URL(button.src).hostname;
 					await db.addURLToScrape(nextURL);
+
 					if (
 						!currentlyScraping.includes(nextURL) &&
 						!Array.from(await db.retrieveURLsToScrape()).some(
@@ -94,6 +96,6 @@ async function scrapeURL(url: string) {
 }
 
 for (let url of urlsToScrape) {
-	scrapeURL(url.url);
+	scrapeURL(url.url, url.url_id);
 	console.log(urlsToScrape.length, "URLs left to scrape.");
 }
