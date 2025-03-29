@@ -29,7 +29,7 @@ if (urlsToScrape.length === 0) {
 }
 
 async function scrapeURL(url: string) {
-  if (currentlyScraping.length >= 10) {
+  if (currentlyScraping.length >= 30) {
     console.log("Too many concurrent scrapers, waiting to scrape:", url);
     setTimeout(() => {
       scrapeURL(url);
