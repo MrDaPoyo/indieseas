@@ -33,7 +33,7 @@ export function retrieveAllScrapedURLs() {
     try {
         return db.query.scrapedURLs.findMany();
     } catch (error) {
-        return false;
+        return {};
     }
 }
 
@@ -58,13 +58,22 @@ export async function scrapedURL(url: string) {
     }
 }
 
-export function addURLToScrape(url: string) {
+export async function addURLToScrape(url: string) {
     try {
-        db.insert(schema.scrapedURLs).values({ url: url, hash: hash(url), scraped: false }).then(() => {
-            console.log("Added URL to scrape: " + url, Bun.color("blue", "ansi"));
-        }).catch((error) => {
-            return false;
+        // Check if URL already exists in database
+        const existing = await db.query.scrapedURLs.findFirst({
+            where: eq(schema.scrapedURLs.url, url)
         });
+        
+        if (existing) {
+            await db.update(schema.scrapedURLs).set({ scraped: false })
+                .where(eq(schema.scrapedURLs.url, url));
+            return true;
+        }
+        
+        await db.insert(schema.scrapedURLs)
+            .values({ url: url, hash: hash(url), scraped: false });
+        console.log("Added URL to scrape: " + url, Bun.color("blue", "ansi"));
         return true;
     }
     catch (error) {

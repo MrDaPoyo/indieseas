@@ -10,92 +10,69 @@ let currentlyScraping = [] as any;
 
 let urlsToScrape = await db.retrieveURLsToScrape();
 
+let prohibitedURLs = ["githubusercontent.com", "postimg.cc", "imgur.com"];
+
 console.log(
 	"URLs to scrape:",
 	Array.from(urlsToScrape).map((item) => item.url)
 );
 
 if (urlsToScrape.length === 0) {
-	console.log("No URLs to scrape. Adding a test URL.");
-	await db.addURLToScrape("https://thinliquid.dev/");
+	if (process.argv[2] === undefined) {
+		console.error(
+			"No URLs to scrape. Please provide a URL as an argument."
+		);
+		process.exit(1);
+	}
+	db.addURLToScrape(process.argv[2]);
 	urlsToScrape = await db.retrieveURLsToScrape();
 }
 
-while (true) {
-	if (Array.isArray(urlsToScrape)) {
-		console.log("Scraping", urlsToScrape.length, "URLs");
-
-		const MAX_CONCURRENT_SCRAPERS = 1;
-
-		for await (const url of urlsToScrape) {
-			// Wait until we have a free slot for scraping
-			while (currentlyScraping.length >= MAX_CONCURRENT_SCRAPERS) {
-				console.log(
-					`Max concurrent scrapers (${MAX_CONCURRENT_SCRAPERS}) reached. Waiting...`
-				);
-				await sleep(1000);
-			}
-
-			if (currentlyScraping.includes(url)) {
-				await sleep(1000);
-			} else {
-				currentlyScraping.push(url);
-				const scraperWorker = new Worker("./scrapeWebsite.ts");
-
-				scraperWorker.addEventListener("open", () => {
-					scraperWorker.postMessage(url);
-				});
-
-				scraperWorker.addEventListener("message", async (event) => {
-					if (event.data.success) {
-						for (const button of event.data.buttonData) {
-							await db.insertButton(button);
-							if (
-								button.src.includes(
-									"github",
-									"githubusercontent",
-									"facebook",
-									"twitter",
-									"instagram",
-									"linkedin",
-									"pinterest",
-									"tiktok",
-									"reddit",
-									"tumblr",
-									"discord"
-								)
-							) {
-								continue;
-							} else {
-								const hostname = new URL(button.src).hostname;
-								console.log("Next URL:", hostname);
-								db.addURLToScrape(`https://${hostname}/`);
-							}
-							urlsToScrape = await db.retrieveURLsToScrape();
-						}
-					} else {
-						scraperWorker.terminate();
-						console.log(
-							"Scraping failed for",
-							url.url,
-							event.data.error
-						);
-					}
-
-					// Remove from currently scraping when done
-					const index = currentlyScraping.indexOf(url);
-					if (index > -1) {
-						currentlyScraping.splice(index, 1);
-					}
-					const scrapedUrl = new URL(url.url);
-					await db.scrapedURL(scrapedUrl.hostname);
-					urlsToScrape = await db.retrieveURLsToScrape();
-				});
-			}
-		}
+async function scrapeURL(url: string) {
+	if (currentlyScraping.includes(url)) {
+		setTimeout(() => {
+			console.log("Already scraping:", url);
+		}, 1000);
+		return;
 	}
+	currentlyScraping.push(url);
+	console.log("Currently scraping:", currentlyScraping);
+	const scraperWorker = new Worker("./scrapeWebsite.ts");
 
-	// Add a small delay before the next iteration to prevent tight looping
-	console.log("Waiting for new URLs to scrape...");
-	await sleep(5000);
+	scraperWorker.postMessage({ url: url });
+	scraperWorker.onmessage = async (event) => {
+		if (event.data.success) {
+			const buttonData = event.data.buttonData;
+			for (const button of buttonData) {
+				await db.insertButton(button);
+				if (
+					!prohibitedURLs.some((prohibitedURL) =>
+						button.src.includes(prohibitedURL)
+					)
+				) {
+					const nextURL = new URL(button.src).hostname;
+					await db.addURLToScrape(nextURL);
+					if (
+						!Array.from(await db.retrieveURLsToScrape()).some(
+							(item) => item.url === nextURL
+						)
+					) {
+						scrapeURL(nextURL);
+						console.log("Adding URL to scrape:", button.src);
+					}
+					await db.scrapedURL(url);
+					currentlyScraping = currentlyScraping.filter(
+						(item: any) => item !== url
+					);
+					console.log("Currently scraping:", currentlyScraping);
+				} else {
+					console.error("Error in worker:", event.data.error);
+				}
+			}
+			urlsToScrape = await db.retrieveURLsToScrape();
+			await sleep(1000);
+		}
+	};
 }
+
+scrapeURL(urlsToScrape[0].url);
