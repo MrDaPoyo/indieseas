@@ -7,5 +7,5 @@ Bun.serve({
             return new Response(JSON.stringify(buttons === false ? [] : buttons.length));
         },
     },
-    "port": 80,
+    "port": 8080,
 })
