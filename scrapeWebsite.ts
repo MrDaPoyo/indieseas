@@ -16,6 +16,7 @@ interface Button {
 	found_url?: string;
 	hash?: string;
 	src?: string;
+  links_to?: string | null; // Added links_to attribute
 }
 
 async function getImageSize(
@@ -34,51 +35,64 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 			process.exit();
 		}
 		console.log("Response status:", response.status);
-		const rewriter = new HTMLRewriter().on("img", {
-			async element(element: any) {
-				if (!element.hasAttribute("src")) return;
+    const rewriter = new HTMLRewriter().on("img", {
+      async element(element: any) {
+        if (!element.hasAttribute("src")) return;
 
-				var src = element.getAttribute("src") as any;
-				if (src && !src.startsWith("http")) {
-					src = new URL(src, path).href;
-				}
+        // Extract image source
+        var src = element.getAttribute("src") as any;
+        if (src && !src.startsWith("http")) {
+          src = new URL(src, path).href;
+        }
 
-				let button = await fetch(src);
+        // Check if the image is inside an <a> tag and get the href
+        let links_to = null;
+        const parentElement = element.parentElement;
+        if (parentElement && parentElement.tagName.toLowerCase() === 'a' && parentElement.hasAttribute('href')) {
+          links_to = parentElement.getAttribute('href');
+          // Convert relative URLs to absolute
+          if (links_to && !links_to.startsWith('http')) {
+            links_to = new URL(links_to, path).href;
+          }
+        }
 
-				if (!button.ok) {
-					console.log("Failed to fetch image:", src);
-					return;
-				}
+        // Fetch the image
+        let button = await fetch(src);
+        if (!button.ok) {
+          console.log("Failed to fetch image:", src);
+          return;
+        }
 
-				let buttonBuffer = Buffer.from(await button.arrayBuffer());
+        let buttonBuffer = Buffer.from(await button.arrayBuffer());
 
-				try {
-					const { width, height } = await getImageSize(buttonBuffer);
-					if (!(width === 88 && height === 31)) {
-						return;
-					}
-				} catch (error) {
-					console.log("Unsupported File Type");
-					return;
-				}
+        try {
+          const { width, height } = await getImageSize(buttonBuffer);
+          if (!(width === 88 && height === 31)) {
+            return;
+          }
+        } catch (error) {
+          console.log("Unsupported File Type");
+          return;
+        }
 
-				const filename = element.getAttribute("src") as string;
-				const scraped_date = Date.now();
-				const found_url = path;
-				const hash = db.hash(buttonBuffer) as string;
+        const filename = element.getAttribute("src") as string;
+        const scraped_date = Date.now();
+        const found_url = path;
+        const hash = db.hash(buttonBuffer) as string;
 
-				const buttonData: Button = {
-					image: buttonBuffer,
-					filename,
-					scraped_date,
-					found_url,
-					hash,
-					src,
-				};
+        const buttonData: Button = {
+          image: buttonBuffer,
+          filename,
+          scraped_date,
+          found_url,
+          hash,
+          src,
+          links_to, // Add the links_to attribute
+        };
 
-				totalButtonData.push(buttonData);
-			},
-		});
+        totalButtonData.push(buttonData);
+      },
+    });
 
 		await response
 			.text()
@@ -113,7 +127,7 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 	const maxPages = 20;
 
 	while (toVisit.length > 0 && pageCount < maxPages) {
-		sleep(1000);
+		await sleep(1000);
 		const currentUrl = toVisit.shift();
 		if (!currentUrl || visited.has(currentUrl)) continue;
 
