@@ -37,7 +37,7 @@ export type Button = {
   found_url: string;
   hash: string;
   src: string;
-  website_id?: number | null;
+  website_id: number | null;
 };
 
 export type ScrapedURL = {

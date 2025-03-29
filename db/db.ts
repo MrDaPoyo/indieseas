@@ -18,7 +18,7 @@ export function retrieveAllButtons() {
 	}
 }
 
-export async function insertButton(button: schema.Button) {
+export async function insertButton(button: schema.Button, website_id: number) {
 	try {
 		console.log(await db.insert(schema.buttons).values(button).returning());
 		console.log("Inserted button: " + button.src);
@@ -34,22 +34,18 @@ export async function insertButton(button: schema.Button) {
 			});
 
 			if (existingButton) {
-				if (button.website_id) {
-					await db.insert(schema.buttonWebsiteRelations).values({
-						button_id: existingButton.id,
-						website_id: button.website_id,
-					});
-					console.log("Added relation for existing button");
-				} else {
-					console.log("Button exists but no website_id provided");
-				}
+				await db.insert(schema.buttonWebsiteRelations).values({
+					button_id: existingButton.id,
+					website_id: website_id,
+				});
+				console.log("Added relation for existing button");
 				return true;
 			}
+			return false; // Return false if button doesn't exist
 		} catch (innerError) {
 			console.error("Failed to create relation:", innerError);
+			return false;
 		}
-		console.error("Error inserting button:", error);
-		return false;
 	}
 }
 
@@ -68,6 +64,22 @@ export async function retrieveURLsToScrape() {
 		});
 	} catch (error) {
 		return [];
+	}
+}
+
+export async function retrieveURLId(url: string) {
+	try {
+		const existing = await db.query.scrapedURLs.findFirst({
+			where: eq(schema.scrapedURLs.url, url),
+		});
+		if (existing) {
+			return existing.url_id;
+		} else {
+			return null; // URL not found
+		}
+	} catch (error) {
+		console.error("Error retrieving URL ID:", error);
+		return null; // Error occurred
 	}
 }
 

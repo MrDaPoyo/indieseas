@@ -195,12 +195,6 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 self.onmessage = async (event: MessageEvent) => {
 	console.log("Worker received message:", event.data.url);
 	const totalButtonData = await scrapeEntireWebsite(event.data.url);
-
-	const website_id = event.data.website_id;
-	
-	totalButtonData.forEach(button => {
-		button.website_id = website_id;
-	});
 	
 	postMessage({ buttonData: totalButtonData, success: true });
 	console.log("Worker finished");
