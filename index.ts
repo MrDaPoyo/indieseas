@@ -4,7 +4,7 @@ import * as db from "./db/db";
 console.log("IndieSearch scraper running.");
 
 let currentlyScraping = [] as any;
-const MAX_CONCURRENT_SCRAPERS = 10; // Maximum number of concurrent scrapers
+const MAX_CONCURRENT_SCRAPERS = 30; // Maximum number of concurrent scrapers
 
 let urlsToScrape = await db.retrieveURLsToScrape();
 

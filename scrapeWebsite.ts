@@ -51,8 +51,11 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 			let links_to = null;
 			const parentAnchor = $(element).parent();
 			console.log("Parent tag:", parentAnchor.prop("tagName"));
-			if (parentAnchor.prop("tagName") === "A") {
+			if (parentAnchor.prop("tagName") === "A" && parentAnchor.attr("href")) {
 				console.log("Found link:", parentAnchor.attr("href"));
+				if (!parentAnchor.attr("href")?.includes("http://") || !parentAnchor.attr("href")?.includes("https://")) { 
+					links_to = new URL(parentAnchor.attr("href") as any, path).href;
+				};
 				links_to = parentAnchor.attr("href") as string;
 			}
 
