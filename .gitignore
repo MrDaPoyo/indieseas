@@ -3,6 +3,7 @@ node_modules
 *.db
 static
 scraped
+retrieveNekoWebsites.ts
 
 # output
 out

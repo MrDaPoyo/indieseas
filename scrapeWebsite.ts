@@ -1,6 +1,6 @@
 import * as db from "./db/db";
 import { imageSize } from "image-size";
-import { sleep } from "bun"; 
+import { sleep } from "bun";
 
 declare var self: Worker;
 
@@ -35,7 +35,7 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 			postMessage({ success: false, error: "Failed to fetch the URL" });
 			process.exit();
 		}
-		const rewriter = new HTMLRewriter().on("img", {
+		const rewriter = new HTMLRewriter().on("* img", {
 			async element(element: any) {
 				await sleep(500);
 				if (!element.hasAttribute("src")) return;
@@ -44,23 +44,19 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 				var src = element.getAttribute("src") as any;
 				if (src && !src.startsWith("http")) {
 					src = new URL(src, path).href;
+					console.log("Image src:", src);
 				}
 
-				// Check if the image is inside an <a> tag and get the href
+				// Check if this image is inside an anchor tag and get the link
 				let links_to = null;
-				const parentElement = element.parentElement;
-				if (
-					parentElement &&
-					parentElement.tagName.toLowerCase() === "a" &&
-					parentElement.hasAttribute("href")
-				) {
-					links_to = parentElement.getAttribute("href");
-					if (links_to && !links_to.startsWith("http")) {
-						links_to = new URL(links_to, path).href;
-					}
+				const parentAnchor = element.getAttribute("parentAnchor");
+				if (parentAnchor) {
+					links_to = parentAnchor;
 				}
+
 				if (!src) return;
 				let button = await fetch(src);
+
 				if (!button.ok) {
 					console.log("Failed to fetch image:", src);
 					return;
@@ -82,6 +78,12 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 				const found_url = path;
 				const hash = db.hash(buttonBuffer) as string;
 
+				// Check if this button is already in totalButtonData
+				if (totalButtonData.some((btn) => btn.hash === hash)) {
+					console.log("Already have this button:", filename);
+					return;
+				}
+
 				const buttonData: Button = {
 					image: buttonBuffer,
 					filename,
@@ -89,7 +91,7 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 					found_url,
 					hash,
 					src,
-					links_to, // Add the links_to attribute
+					links_to,
 				};
 				db.scrapedURLPath(path);
 				totalButtonData.push(buttonData);
@@ -121,14 +123,49 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 	}
 
 	const visited = new Set<string>();
-	const toVisit = [url];
 	const allButtons: Button[] = [];
 	let pageCount = 0;
 	const maxPages = 50;
 
-	while (toVisit.length > 0 && pageCount < maxPages) {
-		await sleep(500);
-		const currentUrl = toVisit.shift();
+	// Use a priority queue (simulated with multiple arrays)
+	const sitemapUrls: string[] = []; // Highest priority - sitemap links
+	const priorityUrls: string[] = [];
+	const normalUrls: string[] = [];
+
+	// Add initial URL to appropriate queue
+	if (
+		url.toLowerCase().includes("sitemap") ||
+		url.toLowerCase().includes("map")
+	) {
+		sitemapUrls.push(url);
+	} else if (
+		url.toLowerCase().includes("link") ||
+		url.toLowerCase().includes("button") ||
+		url.toLowerCase().includes("blink")
+	) {
+		priorityUrls.push(url);
+	} else {
+		normalUrls.push(url);
+	}
+
+	while (
+		(sitemapUrls.length > 0 ||
+			priorityUrls.length > 0 ||
+			normalUrls.length > 0) &&
+		pageCount < maxPages
+	) {
+		await sleep(250);
+
+		// Get next URL from sitemap queue first, then priority queue, then normal queue
+		let currentUrl;
+		if (sitemapUrls.length > 0) {
+			currentUrl = sitemapUrls.shift();
+		} else if (priorityUrls.length > 0) {
+			currentUrl = priorityUrls.shift();
+		} else {
+			currentUrl = normalUrls.shift();
+		}
+
 		if (!currentUrl || visited.has(currentUrl)) continue;
 
 		visited.add(currentUrl);
@@ -140,7 +177,11 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 			console.log(`Scraping ${currentUrl}`);
 			const buttons = await scrapeSinglePath(currentUrl);
 			for (const button of buttons) {
-				if (!allButtons.some(existingButton => existingButton.hash === button.hash)) {
+				if (
+					!allButtons.some(
+						(existingButton) => existingButton.hash === button.hash
+					)
+				) {
 					allButtons.push(button);
 				}
 			}
@@ -153,6 +194,10 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 						/<a\s+(?:[^>]*?\s+)?href="([^"]*)"[^>]*>/gi;
 					let match;
 
+					const isSitemap =
+						currentUrl.toLowerCase().includes("sitemap") ||
+						currentUrl.toLowerCase().includes("map");
+
 					while ((match = linkRegex.exec(html)) !== null) {
 						let link = match[1]?.trim();
 						if (
@@ -162,7 +207,7 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 						)
 							continue;
 
-						// Convert relative URLs to absolute because otherwise this wont work
+						// Convert relative URLs to absolute
 						if (!link.startsWith("http")) {
 							link = new URL(link, currentUrl).href;
 						}
@@ -175,7 +220,27 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 							!visited.has(link)
 						) {
 							db.addURLPathToScrape(link);
-							toVisit.push(link); // Push the complete URL instead of building it incorrectly
+
+							if (isSitemap) {
+								sitemapUrls.push(link);
+								visited.delete(link);
+							} else {
+								const lowerLink = link.toLowerCase();
+								if (
+									lowerLink.includes("sitemap") ||
+									lowerLink.includes("map")
+								) {
+									sitemapUrls.push(link);
+								} else if (
+									lowerLink.includes("link") ||
+									lowerLink.includes("button") ||
+									lowerLink.includes("blink")
+								) {
+									priorityUrls.push(link);
+								} else {
+									normalUrls.push(link);
+								}
+							}
 						}
 					}
 				}
@@ -193,7 +258,6 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 
 self.onmessage = async (event: MessageEvent) => {
 	const totalButtonData = await scrapeEntireWebsite(event.data.url);
-	
 	postMessage({ buttonData: totalButtonData, success: true });
 	process.exit();
 };

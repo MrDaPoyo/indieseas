@@ -18,18 +18,21 @@ console.log(
 );
 
 if (urlsToScrape.length === 0) {
-	if (process.argv[2] === undefined) {
-		console.error(
-			"No URLs to scrape. Please provide a URL as an argument."
-		);
-		process.exit(1);
+	const nekoWebsites = await Bun.file("./nekoweb-urls.json").json();
+	for (const url of nekoWebsites) {
+		await db.addURLToScrape(url);
 	}
-	db.addURLToScrape(process.argv[2]);
+	if (process.argv[2] !== undefined) {
+		await db.removeURLEntirely(process.argv[2]);
+		await db.addURLToScrape(process.argv[2]);
+	}
+
 	urlsToScrape = await db.retrieveURLsToScrape();
 }
 
 if (process.argv[2] !== undefined) {
 	console.log("Adding URL to scrape:", process.argv[2]);
+	await db.removeURLEntirely(process.argv[2]);
 	db.addURLToScrape(process.argv[2]);
 	urlsToScrape = await db.retrieveURLsToScrape();
 }
@@ -71,11 +74,11 @@ async function scrapeURL(url: string, url_id: number) {
 			} else {
 				console.error(`Error scraping ${url}:`, event.data.error);
 			}
-			
+
 			// Free up scraper slot regardless of success or failure
 			currentlyScraping = currentlyScraping.filter((u: any) => u !== url);
 			await db.scrapedURL(url);
-			urlsToScrape = urlsToScrape.filter(item => item.url !== url);
+			urlsToScrape = urlsToScrape.filter((item) => item.url !== url);
 			scraperWorker.terminate();
 		};
 
@@ -95,18 +98,20 @@ async function scrapeURL(url: string, url_id: number) {
 
 while (true) {
 	urlsToScrape = await db.retrieveURLsToScrape();
-	
+
 	const availableSlots = MAX_CONCURRENT_SCRAPERS - currentlyScraping.length;
 	const urlsToProcess = urlsToScrape.slice(0, availableSlots);
-	
+
 	for (let url of urlsToProcess) {
 		if (!currentlyScraping.includes(url.url)) {
 			scrapeURL(url.url, url.url_id);
 		}
 	}
-	
-	console.log(`${currentlyScraping.length}/${MAX_CONCURRENT_SCRAPERS} active scrapers, ${urlsToScrape.length} URLs left to scrape.`);
-	
+
+	console.log(
+		`${currentlyScraping.length}/${MAX_CONCURRENT_SCRAPERS} active scrapers, ${urlsToScrape.length} URLs left to scrape.`
+	);
+
 	await sleep(1000);
 	if (urlsToScrape.length === 0 && currentlyScraping.length === 0) {
 		console.log("No more URLs to scrape.");
