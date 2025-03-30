@@ -10,7 +10,7 @@ let urlsToScrape = await db.retrieveURLsToScrape();
 
 let prohibitedURLs = ["raw.githubusercontent.com", "imgur", "catbox.moe"];
 
-let status = new Worker("./status.ts");
+let status = new Worker("./status.ts", { type: "module", smol: true });
 
 console.log(
 	"URLs to scrape:",
@@ -76,8 +76,6 @@ async function scrapeURL(url: string, url_id: number) {
 			currentlyScraping = currentlyScraping.filter((u: any) => u !== url);
 			await db.scrapedURL(url);
 			urlsToScrape = urlsToScrape.filter(item => item.url !== url);
-			
-			// Terminate the worker
 			scraperWorker.terminate();
 		};
 
@@ -86,10 +84,10 @@ async function scrapeURL(url: string, url_id: number) {
 			console.error(`Worker error for ${url}`);
 			currentlyScraping = currentlyScraping.filter((u: any) => u !== url);
 			db.scrapedURL(url);
+			scraperWorker.terminate();
 		};
 	} catch (error) {
 		console.error(`Failed to scrape ${url}:`, error);
-		// Free up scraper slot if initial worker creation fails
 		currentlyScraping = currentlyScraping.filter((u: any) => u !== url);
 		await db.scrapedURL(url);
 	}

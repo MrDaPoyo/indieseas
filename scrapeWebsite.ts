@@ -145,8 +145,7 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 				}
 			}
 
-			// If this is the first page, extract links to visit next
-			if (pageCount === 1) {
+			{
 				const response = await fetch(currentUrl);
 				if (response.ok) {
 					const html = await response.text();
