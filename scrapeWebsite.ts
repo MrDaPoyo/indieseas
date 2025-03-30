@@ -60,7 +60,7 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 					}
 				}
 				if (!src) return;
-				let button = await fetch(src, {verbose: true});
+				let button = await fetch(src);
 				if (!button.ok) {
 					console.log("Failed to fetch image:", src);
 					return;

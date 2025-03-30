@@ -65,21 +65,33 @@ async function scrapeURL(url: string, url_id: number) {
 							await db.addURLToScrape(nextURL.hostname);
 						}
 					}
-					currentlyScraping = currentlyScraping.filter(
-						(u: any) => u !== url
-					);
-					await db.scrapedURL(url);
-					urlsToScrape = urlsToScrape.filter(item => item.url !== url);
-					await sleep(1000);
 				} else {
 					console.log(`No buttons found on ${url}`);
 				}
 			} else {
 				console.error(`Error scraping ${url}:`, event.data.error);
 			}
+			
+			// Free up scraper slot regardless of success or failure
+			currentlyScraping = currentlyScraping.filter((u: any) => u !== url);
+			await db.scrapedURL(url);
+			urlsToScrape = urlsToScrape.filter(item => item.url !== url);
+			
+			// Terminate the worker
+			scraperWorker.terminate();
+		};
+
+		// Add error handler for the worker
+		scraperWorker.onerror = () => {
+			console.error(`Worker error for ${url}`);
+			currentlyScraping = currentlyScraping.filter((u: any) => u !== url);
+			db.scrapedURL(url);
 		};
 	} catch (error) {
 		console.error(`Failed to scrape ${url}:`, error);
+		// Free up scraper slot if initial worker creation fails
+		currentlyScraping = currentlyScraping.filter((u: any) => u !== url);
+		await db.scrapedURL(url);
 	}
 }
 
@@ -98,8 +110,7 @@ while (true) {
 	console.log(`${currentlyScraping.length}/${MAX_CONCURRENT_SCRAPERS} active scrapers, ${urlsToScrape.length} URLs left to scrape.`);
 	
 	await sleep(1000);
-	urlsToScrape = await db.retrieveURLsToScrape();
-	if (urlsToScrape.length === 0) {
+	if (urlsToScrape.length === 0 && currentlyScraping.length === 0) {
 		console.log("No more URLs to scrape.");
 		break;
 	}
