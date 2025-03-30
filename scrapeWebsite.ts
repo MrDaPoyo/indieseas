@@ -124,7 +124,7 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 	const toVisit = [url];
 	const allButtons: Button[] = [];
 	let pageCount = 0;
-	const maxPages = 20;
+	const maxPages = 50;
 
 	while (toVisit.length > 0 && pageCount < maxPages) {
 		await sleep(500);
