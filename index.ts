@@ -40,7 +40,7 @@ async function scrapeURL(url: string, url_id: number) {
 	try {
 		// Create a promise to handle worker completion
 		const scraperWorker = new Worker("./scrapeWebsite.ts");
-    scraperWorker.postMessage({ url: url });
+		scraperWorker.postMessage({ url: url });
 		scraperWorker.onmessage = async (event) => {
 			if (event.data.success) {
 				// Process button data
@@ -52,9 +52,16 @@ async function scrapeURL(url: string, url_id: number) {
 					// Store the buttons in database
 					for (const button of event.data.buttonData) {
 						db.insertButton(button, url_id);
+						if (button.links_to) {
+							const nextURL = new URL(button.links_to);
+							await db.addURLToScrape(nextURL.hostname);
+						} else if (button.src) {
+							const nextURL = new URL(button.src);
+							await db.addURLToScrape(nextURL.hostname);
+						}
 					}
 					currentlyScraping = currentlyScraping.filter(
-						(u) => u !== url
+						(u: any) => u !== url
 					);
 					await db.scrapedURL(url);
 					await sleep(1000);
@@ -70,8 +77,16 @@ async function scrapeURL(url: string, url_id: number) {
 	}
 }
 
-for (let url of urlsToScrape) {
-	scrapeURL(url.url, url.url_id);
-	let urlsToScrape = await db.retrieveURLsToScrape();
-	console.log(urlsToScrape.length, "URLs left to scrape.");
+while (true) {
+	for (let url of urlsToScrape) {
+		scrapeURL(url.url, url.url_id);
+		let urlsToScrape = await db.retrieveURLsToScrape();
+		console.log(urlsToScrape.length, "URLs left to scrape.");
+	}
+	await sleep(1000);
+	urlsToScrape = await db.retrieveURLsToScrape();
+	if (urlsToScrape.length === 0) {
+		console.log("No more URLs to scrape.");
+		break;
+	}
 }

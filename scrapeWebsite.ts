@@ -17,7 +17,6 @@ interface Button {
 	hash?: string;
 	src?: string;
 	links_to?: string | null;
-	website_id?: number | null;
 }
 
 async function getImageSize(

@@ -34,6 +34,17 @@ export async function insertButton(button: schema.Button, website_id: number) {
 			});
 
 			if (existingButton) {
+				if (
+					await db.query.buttonWebsiteRelations.findFirst({
+						where: eq(
+							schema.buttonWebsiteRelations.button_id,
+							existingButton.id
+						),
+					})
+				) {
+					console.log("Relation already exists, skipping.");
+					return true;
+				}
 				await db.insert(schema.buttonWebsiteRelations).values({
 					button_id: existingButton.id,
 					website_id: website_id,
@@ -105,10 +116,6 @@ export async function addURLToScrape(url: string) {
 		});
 
 		if (existing) {
-			await db
-				.update(schema.scrapedURLs)
-				.set({ scraped: false })
-				.where(eq(schema.scrapedURLs.url, url));
 			return true;
 		}
 
