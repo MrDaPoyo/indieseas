@@ -142,7 +142,11 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 		try {
 			// Scrape the current page for buttons
 			const buttons = await scrapeSinglePath(currentUrl);
-			allButtons.push(...buttons);
+			for (const button of buttons) {
+				if (!allButtons.some(existingButton => existingButton.hash === button.hash)) {
+					allButtons.push(button);
+				}
+			}
 
 			// If this is the first page, extract links to visit next
 			if (pageCount === 1) {
