@@ -4,10 +4,11 @@ import * as db from "./db/db";
 console.log("IndieSearch scraper running.");
 
 let currentlyScraping = [] as any;
+const MAX_CONCURRENT_SCRAPERS = 10; // Maximum number of concurrent scrapers
 
 let urlsToScrape = await db.retrieveURLsToScrape();
 
-let prohibitedURLs = ["raw.githubusercontent.com"];
+let prohibitedURLs = ["raw.githubusercontent.com", "imgur", "catbox.moe"];
 
 let status = new Worker("./status.ts");
 
@@ -27,6 +28,12 @@ if (urlsToScrape.length === 0) {
 	urlsToScrape = await db.retrieveURLsToScrape();
 }
 
+if (process.argv[2] !== undefined) {
+	console.log("Adding URL to scrape:", process.argv[2]);
+	db.addURLToScrape(process.argv[2]);
+	urlsToScrape = await db.retrieveURLsToScrape();
+}
+
 async function scrapeURL(url: string, url_id: number) {
 	if (prohibitedURLs.some((prohibited) => url.includes(prohibited))) {
 		console.log(`Skipping prohibited URL: ${url}`);
@@ -34,11 +41,9 @@ async function scrapeURL(url: string, url_id: number) {
 		return;
 	}
 
-	console.log(`Scraping ${url}...`);
 	currentlyScraping.push(url);
 
 	try {
-		// Create a promise to handle worker completion
 		const scraperWorker = new Worker("./scrapeWebsite.ts");
 		scraperWorker.postMessage({ url: url });
 		scraperWorker.onmessage = async (event) => {
@@ -64,6 +69,7 @@ async function scrapeURL(url: string, url_id: number) {
 						(u: any) => u !== url
 					);
 					await db.scrapedURL(url);
+					urlsToScrape = urlsToScrape.filter(item => item.url !== url);
 					await sleep(1000);
 				} else {
 					console.log(`No buttons found on ${url}`);
@@ -78,11 +84,19 @@ async function scrapeURL(url: string, url_id: number) {
 }
 
 while (true) {
-	for (let url of urlsToScrape) {
-		scrapeURL(url.url, url.url_id);
-		let urlsToScrape = await db.retrieveURLsToScrape();
-		console.log(urlsToScrape.length, "URLs left to scrape.");
+	urlsToScrape = await db.retrieveURLsToScrape();
+	
+	const availableSlots = MAX_CONCURRENT_SCRAPERS - currentlyScraping.length;
+	const urlsToProcess = urlsToScrape.slice(0, availableSlots);
+	
+	for (let url of urlsToProcess) {
+		if (!currentlyScraping.includes(url.url)) {
+			scrapeURL(url.url, url.url_id);
+		}
 	}
+	
+	console.log(`${currentlyScraping.length}/${MAX_CONCURRENT_SCRAPERS} active scrapers, ${urlsToScrape.length} URLs left to scrape.`);
+	
 	await sleep(1000);
 	urlsToScrape = await db.retrieveURLsToScrape();
 	if (urlsToScrape.length === 0) {

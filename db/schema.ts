@@ -24,6 +24,19 @@ export const buttons = sqliteTable("buttons", {
   src: text().notNull(),
 });
 
+export const visitedURLs = sqliteTable("visitedURLs", {
+  url_id: integer("url_id").primaryKey(),
+  path: text().notNull(),
+  visited_date: integer().default(Date.now()),
+  amount_of_buttons: integer(),
+});
+
+export const visitedURLsRelations = sqliteTable("visitedURLs_relations", {
+  id: integer("id").primaryKey(),
+  url_id: integer("url_id").references(() => scrapedURLs.url_id).notNull(),
+  button_id: integer("button_id").references(() => buttons.id).notNull(),
+});
+
 export const buttonWebsiteRelations = sqliteTable("button_website_relations", {
   id: integer("id").primaryKey(),
   button_id: integer("button_id").references(() => buttons.id).notNull(),

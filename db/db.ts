@@ -108,6 +108,59 @@ export async function scrapedURL(url: string) {
 	}
 }
 
+export async function addURLPathToScrape(url: string) {
+	try {
+		const existing = await db.query.visitedURLs.findFirst({
+			where: eq(schema.visitedURLs.path, url),
+		});
+
+		if (existing) {
+			return true;
+		}
+
+		const returning = await db
+			.insert(schema.visitedURLs)
+			.values({ path: url, amount_of_buttons: 0 });
+		console.log("Added URL to scrape: " + url);
+		return returning;
+	}
+	catch (error) {
+		console.error(error);
+		return false;
+	}
+}
+
+export async function scrapedURLPath(url: string) {
+	try {
+		await db
+			.update(schema.visitedURLs)
+			.set({ visited_date: new Date().getTime() })
+			.where(eq(schema.visitedURLs.path, url));
+		console.log("Scraped URL:", url);
+		return true;
+	} catch (error) {
+		console.log("Already Scraped.");
+		return false;
+	}
+}
+
+export async function isURLPathScraped(url: string) {
+	try {
+		const existing = await db.query.visitedURLs.findFirst({
+			where: eq(schema.visitedURLs.path, url),
+		});
+		if (existing) {
+			return true;
+		} else {
+			return false; // URL not found
+		}
+	}
+	catch (error) {
+		console.error("Error retrieving URL ID:", error);
+		return false; // Error occurred
+	}
+}
+
 export async function addURLToScrape(url: string) {
 	try {
 		// Check if URL already exists in database

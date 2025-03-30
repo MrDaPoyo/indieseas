@@ -1,13 +1,10 @@
 import * as db from "./db/db";
 import { imageSize } from "image-size";
+import { sleep } from "bun"; 
 
 declare var self: Worker;
 
 console.log("Worker started");
-
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 interface Button {
 	image?: any;
@@ -27,6 +24,10 @@ async function getImageSize(
 }
 
 async function scrapeSinglePath(path: string): Promise<Button[]> {
+	if (await db.isURLPathScraped(path)) {
+		console.log("Already scraped:", path);
+		return [];
+	}
 	try {
 		let totalButtonData: Button[] = [];
 		const response = await fetch(path);
@@ -34,9 +35,9 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 			postMessage({ success: false, error: "Failed to fetch the URL" });
 			process.exit();
 		}
-		console.log("Response status:", response.status);
 		const rewriter = new HTMLRewriter().on("img", {
 			async element(element: any) {
+				await sleep(500);
 				if (!element.hasAttribute("src")) return;
 
 				// Extract image source
@@ -54,14 +55,12 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 					parentElement.hasAttribute("href")
 				) {
 					links_to = parentElement.getAttribute("href");
-					// Convert relative URLs to absolute
 					if (links_to && !links_to.startsWith("http")) {
 						links_to = new URL(links_to, path).href;
 					}
 				}
-
-				// Fetch the image
-				let button = await fetch(src);
+				if (!src) return;
+				let button = await fetch(src, {verbose: true});
 				if (!button.ok) {
 					console.log("Failed to fetch image:", src);
 					return;
@@ -75,7 +74,6 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 						return;
 					}
 				} catch (error) {
-					console.log("Unsupported File Type");
 					return;
 				}
 
@@ -93,7 +91,7 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 					src,
 					links_to, // Add the links_to attribute
 				};
-
+				db.scrapedURLPath(path);
 				totalButtonData.push(buttonData);
 			},
 		});
@@ -104,7 +102,6 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 
 		return totalButtonData;
 	} catch (error) {
-		console.error("Error during scraping:", error);
 		postMessage({ success: false, error: "Scraping failed" });
 		process.exit();
 	}
@@ -123,7 +120,6 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 		}
 	}
 
-	console.log("Starting to scrape entire website from:", url);
 	const visited = new Set<string>();
 	const toVisit = [url];
 	const allButtons: Button[] = [];
@@ -131,7 +127,7 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 	const maxPages = 20;
 
 	while (toVisit.length > 0 && pageCount < maxPages) {
-		await sleep(1000);
+		await sleep(500);
 		const currentUrl = toVisit.shift();
 		if (!currentUrl || visited.has(currentUrl)) continue;
 
@@ -141,6 +137,7 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 
 		try {
 			// Scrape the current page for buttons
+			console.log(`Scraping ${currentUrl}`);
 			const buttons = await scrapeSinglePath(currentUrl);
 			for (const button of buttons) {
 				if (!allButtons.some(existingButton => existingButton.hash === button.hash)) {
@@ -171,7 +168,6 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 							link = new URL(link, currentUrl).href;
 						}
 
-						// Only , AND ONLY add if its from the same domain
 						const currentUrlObj = new URL(currentUrl);
 						const linkUrlObj = new URL(link);
 
@@ -179,7 +175,8 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 							currentUrlObj.hostname === linkUrlObj.hostname &&
 							!visited.has(link)
 						) {
-							toVisit.push(link);
+							db.addURLPathToScrape(link);
+							toVisit.push(link); // Push the complete URL instead of building it incorrectly
 						}
 					}
 				}
@@ -196,10 +193,8 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 }
 
 self.onmessage = async (event: MessageEvent) => {
-	console.log("Worker received message:", event.data.url);
 	const totalButtonData = await scrapeEntireWebsite(event.data.url);
 	
 	postMessage({ buttonData: totalButtonData, success: true });
-	console.log("Worker finished");
 	process.exit();
 };
