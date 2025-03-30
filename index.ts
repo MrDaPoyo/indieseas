@@ -10,23 +10,25 @@ let urlsToScrape = await db.retrieveURLsToScrape();
 
 let prohibitedURLs = ["raw.githubusercontent.com", "imgur", "catbox.moe"];
 
-let status = new Worker("./status.ts", { type: "module", smol: true });
+let status = new Worker("./status.ts", { type: "module" });
 
 console.log(
 	"URLs to scrape:",
 	Array.from(urlsToScrape).map((item) => item.url)
 );
 
-if (urlsToScrape.length === 0) {
+if (process.argv[2] === "--nekoweb") {
 	const nekoWebsites = await Bun.file("./nekoweb-urls.json").json();
 	for (const url of nekoWebsites) {
 		await db.addURLToScrape(url);
 	}
-	if (process.argv[2] !== undefined) {
+}
+
+if (urlsToScrape.length === 0) {
+	if (process.argv[2] !== undefined && process.argv[2] !== "--nekoweb") {
 		await db.removeURLEntirely(process.argv[2]);
 		await db.addURLToScrape(process.argv[2]);
 	}
-
 	urlsToScrape = await db.retrieveURLsToScrape();
 }
 
@@ -83,8 +85,9 @@ async function scrapeURL(url: string, url_id: number) {
 		};
 
 		// Add error handler for the worker
-		scraperWorker.onerror = () => {
+		scraperWorker.onerror = (err) => {
 			console.error(`Worker error for ${url}`);
+			console.error(err.message);
 			currentlyScraping = currentlyScraping.filter((u: any) => u !== url);
 			db.scrapedURL(url);
 			scraperWorker.terminate();

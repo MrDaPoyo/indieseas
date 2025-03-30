@@ -1,10 +1,8 @@
-import type { Config } from "drizzle-kit";
-
-export default {
-  out: './drizzle',
+import { defineConfig } from "drizzle-kit";
+export default defineConfig({
+  dialect: 'sqlite',
   schema: './db/schema.ts',
-  dialect: 'postgresql',
   dbCredentials: {
-    url: process.env.DB_URL,
-  },
-} as Config;
+    url: "indiesea.db"
+  }
+})

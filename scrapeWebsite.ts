@@ -1,6 +1,7 @@
 import * as db from "./db/db";
 import { imageSize } from "image-size";
 import { sleep } from "bun";
+import * as cheerio from "cheerio";
 
 declare var self: Worker;
 
@@ -35,72 +36,68 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 			postMessage({ success: false, error: "Failed to fetch the URL" });
 			process.exit();
 		}
-		const rewriter = new HTMLRewriter().on("* img", {
-			async element(element: any) {
-				await sleep(500);
-				if (!element.hasAttribute("src")) return;
+		const $ = cheerio.load(await response.text());
+		const images = $("img").toArray();
+		for (const element of images) {
+			await sleep(500);
+			if (!$(element).attr("src")) continue;
 
-				// Extract image source
-				var src = element.getAttribute("src") as any;
-				if (src && !src.startsWith("http")) {
-					src = new URL(src, path).href;
-					console.log("Image src:", src);
+			var src = $(element).attr("src") as any;
+			if (src && !src.startsWith("http")) {
+				src = new URL(src, path).href;
+				console.log("Image src:", src);
+			}
+
+			let links_to = null;
+			const parentAnchor = $(element).parent();
+			console.log("Parent tag:", parentAnchor.prop("tagName"));
+			if (parentAnchor.prop("tagName") === "A") {
+				console.log("Found link:", parentAnchor.attr("href"));
+				links_to = parentAnchor.attr("href") as string;
+			}
+
+			if (!src) continue;
+			let button = await fetch(src);
+
+			if (!button.ok) {
+				console.log("Failed to fetch image:", src);
+				continue;
+			}
+
+			let buttonBuffer = Buffer.from(await button.arrayBuffer());
+
+			try {
+				const { width, height } = await getImageSize(buttonBuffer);
+				if (!(width === 88 && height === 31)) {
+					continue;
 				}
+			} catch (error) {
+				continue;
+			}
 
-				// Check if this image is inside an anchor tag and get the link
-				let links_to = null;
-				const parentAnchor = element.getAttribute("parentAnchor");
-				if (parentAnchor) {
-					links_to = parentAnchor;
-				}
+			const filename = $(element).attr("src") as string;
+			const scraped_date = Date.now();
+			const found_url = path;
+			const hash = db.hash(buttonBuffer) as string;
 
-				if (!src) return;
-				let button = await fetch(src);
+			// Check if this button is already in totalButtonData
+			if (totalButtonData.some((btn) => btn.hash === hash)) {
+				console.log("Already have this button:", filename);
+				continue;
+			}
 
-				if (!button.ok) {
-					console.log("Failed to fetch image:", src);
-					return;
-				}
-
-				let buttonBuffer = Buffer.from(await button.arrayBuffer());
-
-				try {
-					const { width, height } = await getImageSize(buttonBuffer);
-					if (!(width === 88 && height === 31)) {
-						return;
-					}
-				} catch (error) {
-					return;
-				}
-
-				const filename = element.getAttribute("src") as string;
-				const scraped_date = Date.now();
-				const found_url = path;
-				const hash = db.hash(buttonBuffer) as string;
-
-				// Check if this button is already in totalButtonData
-				if (totalButtonData.some((btn) => btn.hash === hash)) {
-					console.log("Already have this button:", filename);
-					return;
-				}
-
-				const buttonData: Button = {
-					image: buttonBuffer,
-					filename,
-					scraped_date,
-					found_url,
-					hash,
-					src,
-					links_to,
-				};
-				db.scrapedURLPath(path);
-				totalButtonData.push(buttonData);
-			},
-		});
-
-		await response
-			.text()
-			.then((html) => rewriter.transform(new Response(html)));
+			const buttonData: Button = {
+				image: buttonBuffer,
+				filename,
+				scraped_date,
+				found_url,
+				hash,
+				src,
+				links_to,
+			};
+			db.scrapedURLPath(path);
+			totalButtonData.push(buttonData);
+		}
 
 		return totalButtonData;
 	} catch (error) {
