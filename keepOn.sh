@@ -7,8 +7,8 @@ echo "Starting keeper script at $(date)" >> "$LOG_FILE"
 echo "Working directory: $PROJECT_DIR" >> "$LOG_FILE"
 
 while true; do
-    echo "Starting 'bun run .' at $(date)" >> "$LOG_FILE"
-    cd "$PROJECT_DIR" && bun run .
+    echo "Starting 'bun run scraper.ts' at $(date)" >> "$LOG_FILE"
+    cd "$PROJECT_DIR" && bun run scraper.ts
     
     EXIT_CODE=$?
     echo "'bun run .' exited with code $EXIT_CODE at $(date)" >> "$LOG_FILE"

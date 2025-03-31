@@ -4,7 +4,7 @@ echo KeepOn - Press 'C' to stop the process
 echo Starting bun...
 
 :loop
-start /b /wait cmd /c bun run .
+start /b /wait cmd /c bun run scraper.ts
 echo Bun process stopped or crashed, restarting...
 
 :: Check if user wants to exit
