@@ -25,9 +25,6 @@ async function getImageSize(
 }
 
 async function scrapeSinglePath(path: string): Promise<Button[]> {
-  if (!path.endsWith("/")) {
-    path = path + "/";
-  }
   if (await db.isURLPathScraped(path)) {
     return [];
   }
