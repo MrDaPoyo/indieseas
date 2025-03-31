@@ -12,16 +12,16 @@ let prohibitedURLs = ["raw.githubusercontent.com", "imgur", "catbox.moe"];
 
 let status = new Worker("./status.ts", { type: "module" });
 
-console.log(
-	"URLs to scrape:",
-	Array.from(urlsToScrape).map((item) => item.url)
-);
-
 if (process.argv[2] === "--nekoweb") {
 	const nekoWebsites = await Bun.file("./nekoweb-urls.json").json();
 	for (const url of nekoWebsites) {
 		await db.addURLToScrape(url);
 	}
+} else if (process.argv[2] === "--status") {
+	console.log(await Array.from(await db.retrieveAllButtons()).length + " Buttons Found so far.");
+	console.log(await Array.from(await db.retrieveAllScrapedURLs()).length + " URLS Scraped so far.");
+	console.log(await Array.from(await db.retrieveURLsToScrape()).length + " URLs to scrape.");
+	process.exit(0);
 }
 
 if (urlsToScrape.length === 0) {
@@ -38,6 +38,11 @@ if (process.argv[2] !== undefined) {
 	db.addURLToScrape(process.argv[2]);
 	urlsToScrape = await db.retrieveURLsToScrape();
 }
+
+console.log(
+	"URLs to scrape:",
+	Array.from(urlsToScrape).map((item) => item.url)
+);
 
 async function scrapeURL(url: string, url_id: number) {
 	if (prohibitedURLs.some((prohibited) => url.includes(prohibited))) {

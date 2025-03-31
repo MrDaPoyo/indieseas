@@ -91,7 +91,7 @@ export function retrieveAllScrapedURLs() {
 		try {
 			return db.query.scrapedURLs.findMany();
 		} catch (error) {
-			return {};
+			return [];
 		}
 	});
 }

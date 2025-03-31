@@ -6,6 +6,7 @@ scraped
 retrieveNekoWebsites.ts
 indiesea.db-shm
 indiesea.db-wal
+keepon.log
 
 # output
 out

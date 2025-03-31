@@ -2,12 +2,11 @@ import * as db from "./db/db";
 
 Bun.serve({
 	routes: {
-		"/": async (req: Request) => {
+		"/": async () => {
 			const buttons = await db.retrieveAllButtons();
 			return new Response(
 				JSON.stringify({
-					buttons: buttons === false ? [] : buttons.length,
-					scraped_urls: await db.retrieveAllScrapedURLs(),
+					buttons: buttons.length,
 				}),
 				{}
 			);
