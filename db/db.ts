@@ -1,56 +1,22 @@
-import { drizzle } from "drizzle-orm/bun-sqlite";
+import { drizzle } from 'drizzle-orm/node-postgres';
 import { eq } from "drizzle-orm";
-import { Database } from "bun:sqlite";
 import * as schema from "./schema";
 
-const sqlite = new Database("indiesea.db");
-// Enable WAL mode for better concurrency
-sqlite.exec("PRAGMA journal_mode = WAL;");
-sqlite.exec("PRAGMA busy_timeout = 5000;");
-export let db = drizzle(sqlite, { schema: schema });
-
-async function withRetry<T>(operation: () => Promise<T> | T): Promise<T> {
-	const MAX_RETRIES = 10;
-	const MIN_DELAY = 500;
-	const MAX_DELAY = 2000; // sillyseconds
-	
-	for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-		try {
-			return await operation();
-		} catch (error) {
-			const isLocked = error instanceof Error && 
-											 (error.message.includes('database is locked') || 
-												error.message.includes('SQLITE_BUSY'));
-			
-			if (!isLocked || attempt === MAX_RETRIES - 1) {
-				console.error("Operation failed:", error);
-			}
-			
-			const delay = Math.floor(Math.random() * (MAX_DELAY - MIN_DELAY + 1)) + MIN_DELAY;
-			console.log(`Database locked, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
-			await new Promise(resolve => setTimeout(resolve, delay));
-		}
-	}
-	
-	throw new Error('Max retries reached');
-}
+export let db = drizzle(process.env.DB_URL! as string, { schema: schema });
 
 export function hash(image: any): any {
 	return Bun.hash(image.toString());
 }
 
 export function retrieveAllButtons() {
-	return withRetry(() => {
 		try {
 			return db.query.buttons.findMany();
 		} catch (error) {
 			return [];
 		}
-	});
 }
 
 export async function insertButton(button: schema.Button, website_id: number) {
-	return withRetry(async () => {
 		try {
 			console.log(await db.insert(schema.buttons).values(button).returning());
 			return true;
@@ -83,21 +49,17 @@ export async function insertButton(button: schema.Button, website_id: number) {
 				return false;
 			}
 		}
-	});
 }
 
 export function retrieveAllScrapedURLs() {
-	return withRetry(() => {
 		try {
 			return db.query.scrapedURLs.findMany();
 		} catch (error) {
 			return [];
 		}
-	});
 }
 
 export async function retrieveURLsToScrape() {
-	return withRetry(async () => {
 		try {
 			return await db.query.scrapedURLs.findMany({
 				where: eq(schema.scrapedURLs.scraped, false),
@@ -105,11 +67,9 @@ export async function retrieveURLsToScrape() {
 		} catch (error) {
 			return [];
 		}
-	});
 }
 
 export async function retrieveURLId(url: string) {
-	return withRetry(async () => {
 		try {
 			const existing = await db.query.scrapedURLs.findFirst({
 				where: eq(schema.scrapedURLs.url, url),
@@ -123,27 +83,24 @@ export async function retrieveURLId(url: string) {
 			console.error("Error retrieving URL ID:", error);
 			return null; // Error occurred
 		}
-	});
 }
 
 export async function scrapedURL(url: string) {
-	return withRetry(async () => {
 		try {
 			await db
 				.update(schema.scrapedURLs)
-				.set({ scraped: true, scraped_date: new Date().getTime() })
+				.set({ scraped: true, scraped_date: new Date().getDate() as unknown as Date })
 				.where(eq(schema.scrapedURLs.url, url));
 			console.log("Scraped URL:", url);
 			return true;
 		} catch (error) {
 			console.log("Already Scraped.");
+			console.log(error);
 			return false;
 		}
-	});
 }
 
 export async function addURLPathToScrape(url: string) {
-	return withRetry(async () => {
 		try {
 			const existing = await db.query.visitedURLs.findFirst({
 				where: eq(schema.visitedURLs.path, url),
@@ -162,27 +119,24 @@ export async function addURLPathToScrape(url: string) {
 			console.error(error);
 			return false;
 		}
-	});
 }
 
 export async function scrapedURLPath(url: string) {
-	return withRetry(async () => {
 		try {
 			await db
 				.update(schema.visitedURLs)
-				.set({ visited_date: new Date().getTime() })
+				.set({ visited_date: new Date().getDate() as unknown as Date })
 				.where(eq(schema.visitedURLs.path, url));
 			console.log("Scraped URL:", url);
 			return true;
 		} catch (error) {
+			console.log(error);
 			console.log("Already Scraped.");
 			return false;
 		}
-	});
 }
 
 export async function isURLPathScraped(url: string) {
-	return withRetry(async () => {
 		try {
 			const existing = await db.query.visitedURLs.findFirst({
 				where: eq(schema.visitedURLs.path, url),
@@ -194,16 +148,14 @@ export async function isURLPathScraped(url: string) {
 			}
 		}
 		catch (error) {
+			console.log(error);
 			console.error("Error retrieving URL ID:", error);
-			return false; // Error occurred
+			return false;
 		}
-	});
 }
 
 export async function addURLToScrape(url: string) {
-	return withRetry(async () => {
 		try {
-			// Check if URL already exists in database
 			const existing = await db.query.scrapedURLs.findFirst({
 				where: eq(schema.scrapedURLs.url, url),
 			});
@@ -220,11 +172,9 @@ export async function addURLToScrape(url: string) {
 			console.error(error);
 			return false;
 		}
-	});
 }
 
 export async function removeURLEntirely(url: string) {
-	return withRetry(async () => {
 		try {
 			const existing = await db.query.scrapedURLs.findFirst({
 				where: eq(schema.scrapedURLs.url, url),
@@ -251,8 +201,6 @@ export async function removeURLEntirely(url: string) {
 			}
 			return false;
 		} catch (error) {
-			console.error(error);
 			return false;
 		}
-	});
 }

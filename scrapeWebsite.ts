@@ -46,6 +46,7 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
         src = new URL(src, path).href;
       }
 
+<<<<<<< HEAD
       let links_to = null;
       const parentAnchor = $(element).parent();
       if (parentAnchor.prop("tagName") === "A" && parentAnchor.attr("href")) {
@@ -54,6 +55,25 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
         };
         links_to = parentAnchor.attr("href") as string;
       }
+=======
+			let links_to = null;
+			const parentAnchor = $(element).parent();
+			console.log("Parent tag:", parentAnchor.prop("tagName"));
+			if (
+				parentAnchor.prop("tagName") === "A" &&
+				parentAnchor.attr("href")
+			) {
+				console.log("Found link:", parentAnchor.attr("href"));
+				if (
+					!parentAnchor.attr("href")?.includes("http://") ||
+					!parentAnchor.attr("href")?.includes("https://")
+				) {
+					links_to = new URL(parentAnchor.attr("href") as any, path)
+						.href;
+				}
+				links_to = parentAnchor.attr("href") as string;
+			}
+>>>>>>> 3734bff (postgres)
 
       if (!src) continue;
       let button = await fetch(src);
@@ -185,6 +205,7 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
           }
         }
 
+<<<<<<< HEAD
         {
           const response = await fetch(currentUrl);
           if (response.ok) {
@@ -192,11 +213,20 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
             const linkRegex =
               /<a\s+(?:[^>]*?\s+)?href="([^"]*)"[^>]*>/gi;
             let match;
+=======
+			{
+				const response = await fetch(currentUrl);
+				if (response.ok) {
+					const html = await response.text();
+					const $ = cheerio.load(html);
+					const aTags = $("a").toArray();
+>>>>>>> 3734bff (postgres)
 
             const isSitemap =
               currentUrl.toLowerCase().includes("sitemap") ||
               currentUrl.toLowerCase().includes("map");
 
+<<<<<<< HEAD
             while ((match = linkRegex.exec(html)) !== null) {
               let link = match[1]?.trim();
               if (
@@ -213,6 +243,28 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 
               const currentUrlObj = new URL(currentUrl);
               const linkUrlObj = new URL(link);
+=======
+					for (const element of aTags) {
+						let link = element.attribs.href as string;
+						if (
+							!link ||
+							link.startsWith("#") ||
+							link.startsWith("javascript:")
+						)
+							continue;
+
+						// Convert relative URLs to absolute
+						if (!link.startsWith("http://") || !link.startsWith("https://")) {
+							link = new URL(link, currentUrl).href;
+						}
+
+						if (!link.endsWith("/")) {
+							link = link.concat("/");
+						}
+
+						const currentUrlObj = new URL(currentUrl);
+						const linkUrlObj = new URL(link);
+>>>>>>> 3734bff (postgres)
 
               if (
                 currentUrlObj.hostname === linkUrlObj.hostname &&
@@ -261,3 +313,5 @@ self.onmessage = async (event: MessageEvent) => {
   postMessage({ buttonData: totalButtonData, success: true });
   process.exit();
 };
+
+console.log(await scrapeEntireWebsite("https://thinliquid.dev"));

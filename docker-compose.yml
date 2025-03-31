@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data # Mount a named volume 'pgdata' to persist data in the specified directory inside the container
+    restart: always
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: superdupersecretindieseadatabasetestpasswordthatwewillabsolutelyhidefromothers
+      POSTGRES_DB: indiesea
+
+volumes: # Define named volumes that can be used by services
+  pgdata: # Named volume 'pgdata' used to persist PostgreSQL data outside the container
