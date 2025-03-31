@@ -59,9 +59,10 @@ async function scrapeURL(url: string, url_id: number) {
 	if (prohibitedURLs.some((prohibited) => url.includes(prohibited))) {
 		console.log(`Skipping prohibited URL: ${url}`);
 		await db.scrapedURL(url);
-		currentlyScraping = currentlyScraping.filter((u: any) => u !== url);
 		return;
 	}
+
+	currentlyScraping.push(url);
 
 	try {
 		const scraperWorker = new Worker("./scrapeWebsite.ts");
@@ -130,11 +131,10 @@ while (true) {
 
 	for (let url of urlsToProcess) {
 		if (!currentlyScraping.includes(url.url)) {
-			// Mark this URL as being processed before starting the scrape
-			currentlyScraping.push(url.url);
 			scrapeURL(url.url, url.url_id);
 		}
 	}
+
 	console.log(
 		`${currentlyScraping.length}/${MAX_CONCURRENT_SCRAPERS} active scrapers, ${urlsToScrape.length} URLs left to scrape.`
 	);

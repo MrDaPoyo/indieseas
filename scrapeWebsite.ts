@@ -176,7 +176,7 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 		pageCount++;
 		console.log("Scraping:", currentUrl);
 		const buttons = await scrapeSinglePath(currentUrl);
-		if (buttons.length > 0) {
+		if (buttons && buttons.length > 0) {
 			console.log("Found buttons:", buttons.length);
 			allButtons.push(...buttons);
 		}
@@ -211,9 +211,8 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 }
 
 self.onmessage = async (event: MessageEvent) => {
+	console.log("url received " + event.data.url)
 	const totalButtonData = await scrapeEntireWebsite(event.data.url);
 	postMessage({ buttonData: totalButtonData, success: true });
 	process.exit();
 };
-
-console.log(await scrapeEntireWebsite("https://thinliquid.dev/"));
