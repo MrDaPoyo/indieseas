@@ -4,7 +4,7 @@ import * as db from "./db/db";
 console.log("IndieSearch scraper running.");
 
 let currentlyScraping = [] as any;
-const MAX_CONCURRENT_SCRAPERS = 30; // Maximum number of concurrent scrapers
+const MAX_CONCURRENT_SCRAPERS = Number(process.env.MAX_CONCURRENT_SCRAPERS) || 10;
 
 let urlsToScrape = await db.retrieveURLsToScrape();
 
@@ -63,14 +63,22 @@ async function scrapeURL(url: string, url_id: number) {
 					for (const button of event.data.buttonData) {
 						db.insertButton(button, url_id);
 						if (button.links_to) {
-							const nextURL = new URL(button.links_to);
-							await db.addURLToScrape(nextURL.hostname);
+							if (
+								button.links_to.startsWith("http") ||
+								button.links_to.startsWith("https")
+							) {
+								const nextURL = new URL(button.links_to);
+								await db.addURLToScrape(nextURL.hostname);
+							} else {
+								const nextURL = new URL(button.links_to, `https://${url}`);
+								await db.addURLToScrape(nextURL.hostname);
+							}
 						} else if (button.src) {
 							const nextURL = new URL(button.src);
 							await db.addURLToScrape(nextURL.hostname);
 						}
 					}
-				} else {
+				} else if (event.data.success) {
 					console.log(`No buttons found on ${url}`);
 				}
 			} else {

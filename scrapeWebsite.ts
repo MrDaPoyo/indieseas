@@ -175,6 +175,10 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 		try {
 			// Scrape the current page for buttons
 			console.log(`Scraping ${currentUrl}`);
+			if (!currentUrl) {
+				console.warn("Skipping undefined URL");
+				continue;
+			}
 			const buttons = await scrapeSinglePath(currentUrl);
 			for (const button of buttons) {
 				if (

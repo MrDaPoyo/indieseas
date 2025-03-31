@@ -4,6 +4,8 @@ node_modules
 static
 scraped
 retrieveNekoWebsites.ts
+indiesea.db-shm
+indiesea.db-wal
 
 # output
 out
