@@ -26,7 +26,6 @@ async function getImageSize(
 
 async function scrapeSinglePath(path: string): Promise<Button[]> {
   if (await db.isURLPathScraped(path)) {
-    console.log("Already scraped:", path);
     return [];
   }
   try {
@@ -50,7 +49,6 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
       let links_to = null;
       const parentAnchor = $(element).parent();
       if (parentAnchor.prop("tagName") === "A" && parentAnchor.attr("href")) {
-        console.log("Found link:", parentAnchor.attr("href"));
         if (!parentAnchor.attr("href")?.includes("http://") || !parentAnchor.attr("href")?.includes("https://")) {
           links_to = new URL(parentAnchor.attr("href") as any, path).href;
         };
@@ -83,7 +81,6 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 
       // Check if this button is already in totalButtonData
       if (totalButtonData.some((btn) => btn.hash === hash)) {
-        console.log("Already have this button:", filename);
         continue;
       }
 
@@ -168,7 +165,7 @@ async function scrapeEntireWebsite(url: string): Promise<Button[]> {
 
     visited.add(currentUrl);
     pageCount++;
-    console.log(`Scraping page ${pageCount}/${maxPages}: ${currentUrl}`);
+    // console.log(`Scraping page ${pageCount}/${maxPages}: ${currentUrl}`);
 
     try {
       // Scrape the current page for buttons
