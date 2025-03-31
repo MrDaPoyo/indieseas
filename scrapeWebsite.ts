@@ -45,7 +45,6 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
       var src = $(element).attr("src") as any;
       if (src && !src.startsWith("http")) {
         src = new URL(src, path).href;
-        console.log("Image src:", src);
       }
 
       let links_to = null;
