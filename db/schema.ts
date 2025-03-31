@@ -9,7 +9,7 @@ const bytea = customType<{ data: Buffer | string; default: false }>({
 export const scrapedURLs = pgTable("scrapedURLs", {
   url_id: serial().primaryKey(),
   url: text().notNull().unique(),
-  scraped_date: timestamp().defaultNow(),
+  scraped_date: timestamp({ mode: "date" }).defaultNow(),
   scraped: boolean().notNull().default(false),
   hash: text().unique().notNull(),
 });
@@ -17,7 +17,7 @@ export const scrapedURLs = pgTable("scrapedURLs", {
 export const buttons = pgTable("buttons", {
   id: serial().primaryKey(),
   filename: text().notNull(),
-  scraped_date: timestamp().defaultNow(),
+  scraped_date: timestamp({ mode: "date" }).defaultNow(),
   found_url: text().notNull(),
   hash: text().unique().notNull(),
   image: bytea,
@@ -28,7 +28,7 @@ export const buttons = pgTable("buttons", {
 export const visitedURLs = pgTable("visitedURLs", {
   url_id: serial().primaryKey(),
   path: text().notNull(),
-  visited_date: timestamp().defaultNow(),
+  visited_date: timestamp({ mode: "date" }).defaultNow(),
   amount_of_buttons: integer(),
 });
 
