@@ -1,14 +1,37 @@
 import { sleep } from "bun";
 import * as db from "./db/db";
+import * as scrapeWebsite from "./scrapeWebsite";
 
 console.log("IndieSearch scraper running.");
 
 let currentlyScraping = [] as any;
-const MAX_CONCURRENT_SCRAPERS = Number(process.env.MAX_CONCURRENT_SCRAPERS) || 10;
+const MAX_CONCURRENT_SCRAPERS =
+	Number(process.env.MAX_CONCURRENT_SCRAPERS) || 10;
 
 let urlsToScrape = await db.retrieveURLsToScrape();
 
-let prohibitedURLs = ["google.com", "raw.githubusercontent.com", "catbox.moe", "facebook.com", "github.com", "x.com", "instagram.com", "twitter.com", "tiktok.com", "reddit.com", "tumblr.com", "pinterest.com", "flickr.com", "youtube.com", "vimeo.com", "dailymotion.com", "liveleak.com", "newgrounds.com", "deviantart.com", "artstation.com"];
+let prohibitedURLs = [
+	"google.com",
+	"raw.githubusercontent.com",
+	"catbox.moe",
+	"facebook.com",
+	"github.com",
+	"x.com",
+	"instagram.com",
+	"twitter.com",
+	"tiktok.com",
+	"reddit.com",
+	"tumblr.com",
+	"pinterest.com",
+	"flickr.com",
+	"youtube.com",
+	"vimeo.com",
+	"dailymotion.com",
+	"liveleak.com",
+	"newgrounds.com",
+	"deviantart.com",
+	"artstation.com",
+];
 
 let status = new Worker("./status.ts", { type: "module" });
 
@@ -19,10 +42,19 @@ if (process.argv[2] === "--nekoweb") {
 	}
 } else if (process.argv[2] === "--status") {
 	const allButtons = await db.retrieveAllButtons();
-	
-	if (allButtons) console.log(await Array.from(allButtons).length + " Buttons Found so far.");
-	console.log(await Array.from(await db.retrieveAllScrapedURLs()).length + " URLS Scraped so far.");
-	console.log(await Array.from(await db.retrieveURLsToScrape()).length + " URLs to scrape.");
+
+	if (allButtons)
+		console.log(
+			(await allButtons.length) + " Buttons Found so far."
+		);
+	console.log(
+		(await Array.from(await db.retrieveAllScrapedURLs()).length) +
+			" URLS Scraped so far."
+	);
+	console.log(
+		(await Array.from(await db.retrieveURLsToScrape()).length) +
+			" URLs to scrape."
+	);
 	process.exit(0);
 }
 
@@ -46,7 +78,7 @@ console.log(
 	Array.from(urlsToScrape).map((item) => item.url)
 );
 
-async function scrapeURL(url: string, url_id?: number) {
+async function scrapeURL(url: string, url_id: number) {
 	if (prohibitedURLs.some((prohibited) => url.includes(prohibited))) {
 		console.log(`Skipping prohibited URL: ${url}`);
 		await db.scrapedURL(url);
@@ -69,36 +101,9 @@ async function scrapeURL(url: string, url_id?: number) {
 	}
 
 	try {
-		const scraperWorker = new Worker("./scrapeWebsite.ts");
-		scraperWorker.postMessage({ url: url, website_id: url_id });
-		scraperWorker.onmessage = async (event) => {
-			if (event.data.success) {
-				// Process button data
-				if (event.data.buttonData && event.data.buttonData.length > 0) {
-					console.log(
-						`Found ${event.data.buttonData.length} buttons on ${url}`
-					);
-				} else if (event.data.success) {
-					console.log(`No buttons found on ${url}`);
-				}
-			} else {
-				console.error(`Error scraping ${url}:`, event.data.error);
-			}
-
-			currentlyScraping = currentlyScraping.filter((u: any) => u !== url);
-			await db.scrapedURL(url);
-			urlsToScrape = urlsToScrape.filter((item) => item.url !== url);
-			scraperWorker.terminate();
-		};
-
-		scraperWorker.onerror = async (err) => {
-			console.error(`Worker error for ${url}`);
-			console.error(err.message);
-			currentlyScraping = currentlyScraping.filter((u: any) => u !== url);
-			scraperWorker.terminate();
-		};
+		await scrapeWebsite.scrapeEntireWebsite(url, url_id);
+		await db.scrapedURL(url);
 	} catch (error) {
-		console.error(`Failed to scrape ${url}:`, error);
 		currentlyScraping = currentlyScraping.filter((u: any) => u !== url);
 		await db.scrapedURL(url);
 	}
@@ -120,7 +125,7 @@ while (true) {
 	console.log(
 		`${currentlyScraping.length}/${MAX_CONCURRENT_SCRAPERS} active scrapers, ${urlsToScrape.length} URLs left to scrape.`
 	);
-	
+
 	const allButtons = await db.retrieveAllButtons();
 	if (allButtons.length > 0) {
 		console.log(`Found ${allButtons.length} buttons so far.`);

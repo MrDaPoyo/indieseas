@@ -30,13 +30,13 @@ function fetchButton(url: string): Promise<Response> {
 }
 
 async function scrapeSinglePath(path: string, website_id: number): Promise<Button[]> {
+	return new Promise(async (resolve, reject) => {
 	try {
 		let totalButtonData: Button[] = [];
-		const response = await customFetch(path);
+		const response = await customFetch(path, { timeout: 10000 }); // 10 second timeout
 		if (!response.ok) {
 			console.error("error: ", response.statusText);
-			postMessage({ success: false, error: "Failed to fetch the URL" });
-			process.exit();
+			return [];
 		}
 		const $ = cheerio.load(await response.text());
 		const images = $("img").toArray();
@@ -126,16 +126,17 @@ async function scrapeSinglePath(path: string, website_id: number): Promise<Butto
 			db.insertButton(button, website_id);
 		}
 
+		return resolve(totalButtonData);
 
-		return totalButtonData;
+
 	} catch (error) {
-		console.error("Error scraping:", error);
-		postMessage({ success: false, error: "Scraping failed" });
-		process.exit();
+		console.error(`Failed to scrape path: ${path}`, error);
+		return reject([]);
 	}
+});
 }
 
-function scrapeEntireWebsite(url: string, website_id: number): Promise<Button[]> {
+export async function scrapeEntireWebsite(url: string, website_id: number, maxPages: number = 100): Promise<Button[]> {
 	return new Promise(async (resolve, reject) => {
 		try {
 			if (!url.startsWith("http://") && !url.startsWith("https://")) {
@@ -145,8 +146,7 @@ function scrapeEntireWebsite(url: string, website_id: number): Promise<Button[]>
 			const response = await customFetch(url);
 			
 			if (!response.ok) {
-				postMessage({ success: false, error: "Failed to fetch the URL" });
-				process.exit();
+				return reject("Failed to fetch the URL: " + response.statusText);
 			}
 
 			const $ = cheerio.load(await response.text());
@@ -222,11 +222,26 @@ function scrapeEntireWebsite(url: string, website_id: number): Promise<Button[]>
 					toVisit.add(normalizedHref);
 				} catch (error) {
 					console.log("Invalid URL:", href);
+					continue;
 				}
 			}
+			// Process pages in queue with a maximum limit
+			let pagesScraped = 0;
+			const startTime = Date.now();
+			const maxTimeMs = 5 * 60 * 1000; // 5 minute timeout
 
-			// Process pages in queue
 			while (toVisit.size > 0) {
+				// Check if we've hit our limits
+				if (pagesScraped >= maxPages) {
+					console.log(`Reached maximum page limit (${maxPages}). Stopping crawl.`);
+					break;
+				}
+				
+				if (Date.now() - startTime > maxTimeMs) {
+					console.log(`Scraping timeout reached (${maxTimeMs}ms). Stopping crawl.`);
+					break;
+				}
+				
 				const path = Array.from(toVisit)[0];
 				if (!path) break;
 				toVisit.delete(path);
@@ -238,14 +253,17 @@ function scrapeEntireWebsite(url: string, website_id: number): Promise<Button[]>
 				const isScraped = await db.isURLScraped(path);
 				if (isScraped) continue;
 				
-				console.log("Scraping:", baseUrl + path);
+				console.log(`Scraping (${++pagesScraped}/${maxPages}):`, baseUrl + path);
 				try {
 					const buttons = await scrapeSinglePath(baseUrl + path, website_id);
-					totalButtonData = [...totalButtonData, ...buttons];
+					if (buttons && buttons.length > 0) {
+						totalButtonData = [...totalButtonData, ...buttons];
+					}
 					
 					// Throttle requests to avoid overloading the server
 					await sleep(1000);
 				} catch (error) {
+				
 					console.error("Error scraping path:", path, error);
 				}
 			}
@@ -254,14 +272,7 @@ function scrapeEntireWebsite(url: string, website_id: number): Promise<Button[]>
 		} catch (error) {
 			console.error("Error in scrapeEntireWebsite:", error);
 			reject(error);
-			process.exit();
 		}
 	});
 }
-
-self.onmessage = async (event: MessageEvent) => {
-	const totalButtonData = await scrapeEntireWebsite(event.data.url, event.data.website_id);
-	postMessage({ buttonData: totalButtonData, success: true });
-	process.exit();
-};
 
