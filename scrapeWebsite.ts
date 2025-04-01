@@ -34,13 +34,12 @@ async function scrapeSinglePath(path: string, website_id: number): Promise<Butto
 		let totalButtonData: Button[] = [];
 		const response = await customFetch(path);
 		if (!response.ok) {
-			postMessage({ success: false, error: "Failed to fetch the URL" });
 			console.error("error: ", response.statusText);
+			postMessage({ success: false, error: "Failed to fetch the URL" });
 			process.exit();
 		}
 		const $ = cheerio.load(await response.text());
 		const images = $("img").toArray();
-		console.log("Found " + images.length + " images on the page");
 		for (const element of images) {
 			
 			if (!$(element).attr("src")) continue;
@@ -75,6 +74,7 @@ async function scrapeSinglePath(path: string, website_id: number): Promise<Butto
 
 			if (!button.ok) {
 				console.log("Failed to fetch image:", src);
+				console.error("error: ", button.statusText);
 				continue;
 			}
 
@@ -101,7 +101,6 @@ async function scrapeSinglePath(path: string, website_id: number): Promise<Butto
 
 			// Check if this button is already in totalButtonData
 			if (totalButtonData.some((btn) => btn.hash === hash)) {
-				console.log("Already have this button:", filename);
 				continue;
 			}
 
@@ -237,10 +236,7 @@ function scrapeEntireWebsite(url: string, website_id: number): Promise<Button[]>
 				
 				// Check if URL was already scraped
 				const isScraped = await db.isURLScraped(path);
-				if (isScraped) {
-					console.log("Already scraped:", path);
-					continue;
-				}
+				if (isScraped) continue;
 				
 				console.log("Scraping:", baseUrl + path);
 				try {
@@ -264,7 +260,6 @@ function scrapeEntireWebsite(url: string, website_id: number): Promise<Button[]>
 }
 
 self.onmessage = async (event: MessageEvent) => {
-	console.log("url received " + event.data.url)
 	const totalButtonData = await scrapeEntireWebsite(event.data.url, event.data.website_id);
 	postMessage({ buttonData: totalButtonData, success: true });
 	process.exit();
