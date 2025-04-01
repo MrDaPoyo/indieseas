@@ -20,7 +20,7 @@ if (process.argv[2] === "--nekoweb") {
 } else if (process.argv[2] === "--status") {
 	const allButtons = await db.retrieveAllButtons();
 	
-	if (allButtons) console.log(await Array.from(allButtons.length + " Buttons Found so far.");
+	if (allButtons) console.log(await Array.from(allButtons.length + " Buttons Found so far."));
 	console.log(await Array.from(await db.retrieveAllScrapedURLs()).length + " URLS Scraped so far.");
 	console.log(await Array.from(await db.retrieveURLsToScrape()).length + " URLs to scrape.");
 	process.exit(0);
