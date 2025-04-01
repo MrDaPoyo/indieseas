@@ -8,7 +8,7 @@ const MAX_CONCURRENT_SCRAPERS = Number(process.env.MAX_CONCURRENT_SCRAPERS) || 1
 
 let urlsToScrape = await db.retrieveURLsToScrape();
 
-let prohibitedURLs = ["google.com", "raw.githubusercontent.com", "imgur", "catbox.moe", "facebook.com", "github.com", "x.com", "instagram.com", "twitter.com", "tiktok.com", "reddit.com", "tumblr.com", "pinterest.com", "flickr.com", "youtube.com", "vimeo.com", "dailymotion.com", "liveleak.com", "newgrounds.com", "deviantart.com", "artstation.com"];
+let prohibitedURLs = ["google.com", "raw.githubusercontent.com", "catbox.moe", "facebook.com", "github.com", "x.com", "instagram.com", "twitter.com", "tiktok.com", "reddit.com", "tumblr.com", "pinterest.com", "flickr.com", "youtube.com", "vimeo.com", "dailymotion.com", "liveleak.com", "newgrounds.com", "deviantart.com", "artstation.com"];
 
 let status = new Worker("./status.ts", { type: "module" });
 
