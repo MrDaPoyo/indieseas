@@ -29,7 +29,7 @@ function fetchButton(url: string): Promise<Response> {
 	return customFetch(url);
 }
 
-async function scrapeSinglePath(path: string): Promise<Button[]> {
+async function scrapeSinglePath(path: string, website_id: number): Promise<Button[]> {
 	try {
 		let totalButtonData: Button[] = [];
 		const response = await customFetch(path);
@@ -124,7 +124,7 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 		for (let button of totalButtonData) {
 			if (button.src) await db.addURLToScrape(new URL(button.src).href);
 			if (button.links_to) await db.addURLToScrape(new URL(button.links_to).href);
-			db.insertButton(button, (await db.retrieveURLId(path)) as number);
+			db.insertButton(button, website_id);
 		}
 
 
@@ -136,7 +136,7 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 	}
 }
 
-function scrapeEntireWebsite(url: string): Promise<Button[]> {
+function scrapeEntireWebsite(url: string, website_id: number): Promise<Button[]> {
 	return new Promise(async (resolve, reject) => {
 		try {
 			if (!url.startsWith("http://") && !url.startsWith("https://")) {
@@ -244,7 +244,7 @@ function scrapeEntireWebsite(url: string): Promise<Button[]> {
 				
 				console.log("Scraping:", baseUrl + path);
 				try {
-					const buttons = await scrapeSinglePath(baseUrl + path);
+					const buttons = await scrapeSinglePath(baseUrl + path, website_id);
 					totalButtonData = [...totalButtonData, ...buttons];
 					
 					// Throttle requests to avoid overloading the server
@@ -265,10 +265,7 @@ function scrapeEntireWebsite(url: string): Promise<Button[]> {
 
 self.onmessage = async (event: MessageEvent) => {
 	console.log("url received " + event.data.url)
-	const totalButtonData = await scrapeEntireWebsite(event.data.url);
-	for (const button of totalButtonData) {
-		db.insertButton(button, (await db.retrieveURLId(event.data.url)) as number);
-	}	
+	const totalButtonData = await scrapeEntireWebsite(event.data.url, event.data.website_id);
 	postMessage({ buttonData: totalButtonData, success: true });
 	process.exit();
 };
