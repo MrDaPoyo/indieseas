@@ -6,7 +6,7 @@ const originalFetch = globalThis.fetch;
 globalThis.fetch = async (input, init = {}) => {
 	init.headers = {
 		...init.headers,
-		"User-Agent": "indiesea/0.1 (+https://indieseas.net)",
+		"User-Agent": "indieseas/0.1 (+https://indieseas.net)",
 	};
 
 	return originalFetch(input, init);
@@ -159,6 +159,11 @@ while (true) {
 	console.log(
 		`${currentlyScraping.length}/${MAX_CONCURRENT_SCRAPERS} active scrapers, ${urlsToScrape.length} URLs left to scrape.`
 	);
+	
+	const allButtons = await db.retrieveAllButtons();
+	if (allButtons.length > 0) {
+		console.log(`Found ${allButtons.length} buttons so far.`);
+	}
 
 	await sleep(1000);
 	urlsToScrape = await db.retrieveURLsToScrape();

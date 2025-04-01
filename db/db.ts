@@ -12,7 +12,7 @@ export function retrieveAllButtons() {
 	try {
 		return db.query.buttons.findMany();
 	} catch (error) {
-		return [];
+		return {};
 	}
 }
 

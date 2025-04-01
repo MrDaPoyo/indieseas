@@ -41,7 +41,7 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 		const images = $("img").toArray();
 		console.log("Found " + images.length + " images on the page");
 		for (const element of images) {
-			console.log("Scraping image number " + images.indexOf(element) + " of " + images.length);
+			
 			if (!$(element).attr("src")) continue;
 
 			var src = $(element).attr("src") as any;
