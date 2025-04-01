@@ -80,40 +80,6 @@ async function scrapeURL(url: string, url_id: number) {
 					console.log(
 						`Found ${event.data.buttonData.length} buttons on ${url}`
 					);
-
-					// Store the buttons in database
-					for (const button of event.data.buttonData) {
-						await db.insertButton(button, url_id);
-						if (button.links_to) {
-							if (
-								button.links_to.startsWith("http") ||
-								button.links_to.startsWith("https")
-							) {
-								const nextURL = new URL(button.links_to);
-								await db.addURLToScrape(nextURL.hostname);
-							} else {
-								const nextURL = new URL(button.links_to, `https://${url}`);
-								await db.addURLToScrape(nextURL.hostname);
-							}
-						} else if (button.src) {
-							if (
-								button.src.startsWith("http") ||
-								button.src.startsWith("https")
-							) {
-								const nextURL = new URL(button.src);
-								await db.addURLToScrape(nextURL.hostname);
-							} else {
-								// If the src is relative, construct the full URL
-								// using the current URL's origin
-								const baseURL = new URL(url);
-								baseURL.pathname = button.src;
-								baseURL.search = "";
-								baseURL.hash = "";
-								const nextURL = new URL(baseURL.toString());
-								await db.addURLToScrape(nextURL.hostname);
-							}
-						}
-					}
 				} else if (event.data.success) {
 					console.log(`No buttons found on ${url}`);
 				}
@@ -128,12 +94,10 @@ async function scrapeURL(url: string, url_id: number) {
 			scraperWorker.terminate();
 		};
 
-		// Add error handler for the worker
 		scraperWorker.onerror = async (err) => {
 			console.error(`Worker error for ${url}`);
 			console.error(err.message);
 			currentlyScraping = currentlyScraping.filter((u: any) => u !== url);
-			await db.scrapedURL(url);
 			scraperWorker.terminate();
 		};
 	} catch (error) {

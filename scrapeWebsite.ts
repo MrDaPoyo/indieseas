@@ -120,6 +120,13 @@ async function scrapeSinglePath(path: string): Promise<Button[]> {
 			await db.scrapedURLPath(new URL(path).pathname);
 		}
 
+		for (let button of totalButtonData) {
+			if (button.src) await db.addURLToScrape(new URL(button.src).href);
+			if (button.links_to) await db.addURLToScrape(new URL(button.links_to).href);
+			db.insertButton(button, (await db.retrieveURLId(path)) as number);
+		}
+
+
 		return totalButtonData;
 	} catch (error) {
 		console.error("Error scraping:", error);
@@ -264,3 +271,4 @@ self.onmessage = async (event: MessageEvent) => {
 	postMessage({ buttonData: totalButtonData, success: true });
 	process.exit();
 };
+
