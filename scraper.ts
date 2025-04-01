@@ -161,6 +161,7 @@ while (true) {
 	);
 
 	await sleep(1000);
+	urlsToScrape = await db.retrieveURLsToScrape();
 	if (urlsToScrape.length === 0 && currentlyScraping.length === 0) {
 		console.log("No more URLs to scrape.");
 		break;
