@@ -9,7 +9,7 @@ export default function customFetch(url: string, options = { headers: {} }) {
     const mergedOptions = {
 
         ...options,
-
+        RequestRedirect: "follow",
         headers: customHeaders,
 
     };
