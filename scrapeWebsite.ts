@@ -2,6 +2,7 @@ import * as db from "./db/db";
 import { imageSize } from "image-size";
 import { sleep } from "bun";
 import * as cheerio from "cheerio";
+import customFetch from "./utils/fetch";
 
 declare var self: Worker;
 
@@ -25,13 +26,13 @@ function getImageSize(buffer: Buffer): { width: number; height: number } {
 }
 
 function fetchButton(url: string): Promise<Response> {
-	return fetch(url);
+	return customFetch(url);
 }
 
 async function scrapeSinglePath(path: string): Promise<Button[]> {
 	try {
 		let totalButtonData: Button[] = [];
-		const response = await fetch(path);
+		const response = await customFetch(path);
 		if (!response.ok) {
 			postMessage({ success: false, error: "Failed to fetch the URL" });
 			console.error("error: ", response.statusText);
@@ -142,7 +143,7 @@ function scrapeEntireWebsite(url: string): Promise<Button[]> {
 				url = "https://" + url;
 				url = new URL(url).href;
 			}
-			const response = await fetch(url);
+			const response = await customFetch(url);
 			
 			if (!response.ok) {
 				postMessage({ success: false, error: "Failed to fetch the URL" });

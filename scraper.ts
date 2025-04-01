@@ -1,17 +1,6 @@
 import { sleep } from "bun";
 import * as db from "./db/db";
 
-const originalFetch = globalThis.fetch;
-
-globalThis.fetch = async (input, init = {}) => {
-	init.headers = {
-		...init.headers,
-		"User-Agent": "indieseas/0.1 (+https://indieseas.net)",
-	};
-
-	return originalFetch(input, init);
-};
-
 console.log("IndieSearch scraper running.");
 
 let currentlyScraping = [] as any;
@@ -29,7 +18,9 @@ if (process.argv[2] === "--nekoweb") {
 		await db.addURLToScrape(url);
 	}
 } else if (process.argv[2] === "--status") {
-	console.log(await Array.from(await db.retrieveAllButtons()).length + " Buttons Found so far.");
+	const allButtons = await db.retrieveAllButtons();
+	
+	if (allButtons) console.log(await Array.from(allButtons.length + " Buttons Found so far.");
 	console.log(await Array.from(await db.retrieveAllScrapedURLs()).length + " URLS Scraped so far.");
 	console.log(await Array.from(await db.retrieveURLsToScrape()).length + " URLs to scrape.");
 	process.exit(0);
