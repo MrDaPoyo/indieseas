@@ -87,14 +87,12 @@ export async function retrieveURLId(url: string) {
 
 export async function scrapedURL(url: string) {
 	try {
-		await db
-			.update(schema.scrapedURLs)
-			.set({ scraped: true, scraped_date: new Date() })
+
+		await db.update(schema.scrapedURLs)
+			.set({ scraped: false, scraped_date: new Date() })
 			.where(eq(schema.scrapedURLs.url, url));
-		console.log("Scraped URL:", url);
 		return true;
 	} catch (error) {
-		console.log("Already Scraped.");
 		console.log(error);
 		return false;
 	}
@@ -102,16 +100,19 @@ export async function scrapedURL(url: string) {
 
 export async function isURLScraped(url: string) {
 	try {
-		const existing = await db.query.scrapedURLs.findFirst({
+		const existing = await db.query.scrapedURLs.findMany({
 			where: eq(schema.scrapedURLs.url, url),
+			columns: {
+				scraped: true,
+			},
 		});
-		if (existing) {
+		if (existing[0] && existing.length > 0 && existing[0].scraped) {
 			return true;
 		} else {
-			return false; // URL not found
+			return false; // URL not found or not scraped
 		}
 	} catch (error) {
-		console.error("Error retrieving URL ID:", error);
+		console.error("Error retrieving URL ID at isURLScraped:", error);
 		return false; // Error occurred
 	}
 }
@@ -142,28 +143,27 @@ export async function scrapedURLPath(url: string) {
 			.update(schema.visitedURLs)
 			.set({ visited_date: new Date() })
 			.where(eq(schema.visitedURLs.path, url));
-		console.log("Scraped URL:", url);
 		return true;
 	} catch (error) {
-		console.log(error);
-		console.log("Already Scraped.");
+		console.log("Error at addURLPathToScrape: " + error);
 		return false;
 	}
 }
 
 export async function isURLPathScraped(url: string) {
 	try {
-		const existing = await db.query.visitedURLs.findFirst({
-			where: eq(schema.visitedURLs.path, url),
-		});
+		const existing = await db.select()
+			.from(schema.visitedURLs)
+			.where(eq(schema.visitedURLs.path, url))
+			.execute();
+
 		if (existing) {
 			return true;
 		} else {
 			return false; // URL not found
 		}
 	} catch (error) {
-		console.log(error);
-		console.error("Error retrieving URL ID:", error);
+		console.error("Error at isURLPathScraped:", error);
 		return false;
 	}
 }
@@ -181,6 +181,7 @@ export async function addURLToScrape(url: string) {
 		const returning = await db
 			.insert(schema.scrapedURLs)
 			.values({ url: url, hash: hash(url), scraped: false });
+		console.log("Added URL to scrape: " + url);
 		return returning;
 	} catch (error) {
 		console.error(error);

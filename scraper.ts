@@ -4,12 +4,12 @@ import * as db from "./db/db";
 const originalFetch = globalThis.fetch;
 
 globalThis.fetch = async (input, init = {}) => {
-  init.headers = {
-    ...init.headers,
-    "User-Agent": "indiesea/0.1 (+https://indieseas.net)", 
-  };
+	init.headers = {
+		...init.headers,
+		"User-Agent": "indiesea/0.1 (+https://indieseas.net)",
+	};
 
-  return originalFetch(input, init);
+	return originalFetch(input, init);
 };
 
 console.log("IndieSearch scraper running.");
@@ -64,6 +64,12 @@ async function scrapeURL(url: string, url_id: number) {
 
 	currentlyScraping.push(url);
 
+	if (await db.isURLScraped(url)) {
+		console.log(`Already scraped ${url}.`);
+		currentlyScraping = currentlyScraping.filter((u: any) => u !== url);
+		return;
+	}
+
 	try {
 		const scraperWorker = new Worker("./scrapeWebsite.ts");
 		scraperWorker.postMessage({ url: url });
@@ -77,7 +83,7 @@ async function scrapeURL(url: string, url_id: number) {
 
 					// Store the buttons in database
 					for (const button of event.data.buttonData) {
-						db.insertButton(button, url_id);
+						await db.insertButton(button, url_id);
 						if (button.links_to) {
 							if (
 								button.links_to.startsWith("http") ||
@@ -90,8 +96,22 @@ async function scrapeURL(url: string, url_id: number) {
 								await db.addURLToScrape(nextURL.hostname);
 							}
 						} else if (button.src) {
-							const nextURL = new URL(button.src);
-							await db.addURLToScrape(nextURL.hostname);
+							if (
+								button.src.startsWith("http") ||
+								button.src.startsWith("https")
+							) {
+								const nextURL = new URL(button.src);
+								await db.addURLToScrape(nextURL.hostname);
+							} else {
+								// If the src is relative, construct the full URL
+								// using the current URL's origin
+								const baseURL = new URL(url);
+								baseURL.pathname = button.src;
+								baseURL.search = "";
+								baseURL.hash = "";
+								const nextURL = new URL(baseURL.toString());
+								await db.addURLToScrape(nextURL.hostname);
+							}
 						}
 					}
 				} else if (event.data.success) {
@@ -109,11 +129,11 @@ async function scrapeURL(url: string, url_id: number) {
 		};
 
 		// Add error handler for the worker
-		scraperWorker.onerror = (err) => {
+		scraperWorker.onerror = async (err) => {
 			console.error(`Worker error for ${url}`);
 			console.error(err.message);
 			currentlyScraping = currentlyScraping.filter((u: any) => u !== url);
-			db.scrapedURL(url);
+			await db.scrapedURL(url);
 			scraperWorker.terminate();
 		};
 	} catch (error) {
@@ -131,7 +151,8 @@ while (true) {
 
 	for (let url of urlsToProcess) {
 		if (!currentlyScraping.includes(url.url)) {
-			scrapeURL(url.url, url.url_id);
+			console.log(`Starting to scrape from scraper.ts: ${url.url}`);
+			await scrapeURL(url.url, url.url_id);
 		}
 	}
 
