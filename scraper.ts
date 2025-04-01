@@ -61,6 +61,13 @@ async function scrapeURL(url: string, url_id?: number) {
 		return;
 	}
 
+	if (url.startsWith("https://") || url.startsWith("http://")) {
+		url = new URL(url).href;
+	} else {
+		url = "https://" + url;
+		url = new URL(url).href;
+	}
+
 	try {
 		const scraperWorker = new Worker("./scrapeWebsite.ts");
 		scraperWorker.postMessage({ url: url });
