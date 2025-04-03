@@ -122,7 +122,7 @@ export async function isURLScraped(url: string) {
 	}
 }
 
-export async function addURLPathToScrape(url: string) {
+export async function addURLPathToScrape(url: string, amount_of_buttons: number = 0) {
 	try {
 		const existing = await db.query.visitedURLs.findFirst({
 			where: eq(schema.visitedURLs.path, url),
@@ -134,7 +134,7 @@ export async function addURLPathToScrape(url: string) {
 
 		const returning = await db
 			.insert(schema.visitedURLs)
-			.values({ path: url, amount_of_buttons: 0 });
+			.values({ path: url, amount_of_buttons: amount_of_buttons });
 		return returning;
 	} catch (error) {
 		console.error(error);

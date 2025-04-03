@@ -160,5 +160,3 @@ function getAllowedPaths(rules: RobotsRule[], userAgents: string[], baseUrl: str
     
     return result;
 }
-
-console.log(await checkRobotsTxt("https://uwu.ze.wtf"));

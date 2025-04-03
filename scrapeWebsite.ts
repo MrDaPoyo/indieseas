@@ -46,14 +46,19 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 			if (!robotsResult) {
 				console.log("No robots.txt found or empty.");
 			} else {
-				const allowedUrls = robotsResult.allowed.map((rule: string) => new URL(rule, url).href);
-				const disallowedUrls = robotsResult.disallowed.map((rule: string) => new URL(rule, url).href);
+				const allowedUrls = robotsResult.allowed;
+				const disallowedUrls = robotsResult.disallowed;
+
+				if (!allowedUrls || !disallowedUrls) {
+					console.log("No allowed or disallowed URLs found in robots.txt.");
+					return reject("No allowed or disallowed URLs found in robots.txt.");
+				}
 
 				const isDisallowed = (checkUrl: string) => 
-					disallowedUrls.some((disallowedUrl) => checkUrl.startsWith(disallowedUrl));
+					disallowedUrls.some((disallowedUrl: string) => checkUrl.startsWith(disallowedUrl));
 
 				const isAllowed = (checkUrl: string) => 
-					allowedUrls.some((allowedUrl) => checkUrl.startsWith(allowedUrl));
+					allowedUrls.some((allowedUrl: string) => checkUrl.startsWith(allowedUrl));
 
 				if (isDisallowed(url)) {
 					console.log("URL is disallowed by robots.txt:", url);
