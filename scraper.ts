@@ -1,6 +1,8 @@
 import { sleep } from "bun";
 import * as db from "./db/db";
 import * as scrapeWebsite from "./scrapeWebsite";
+import { loadLemmatizationMap } from "./utils/lemmatize";
+import { checkRobotsTxt } from "./utils/checkRobotsTxt";
 
 console.log("IndieSearch scraper running.");
 
@@ -31,9 +33,8 @@ let prohibitedURLs = [
 	"newgrounds.com",
 	"deviantart.com",
 	"artstation.com",
+	"ze.wtf",
 ];
-
-let status = new Worker("./status.ts", { type: "module" });
 
 if (process.argv[2] === "--nekoweb") {
 	const nekoWebsites = await Bun.file("./nekoweb-urls.json").json();
@@ -73,6 +74,9 @@ if (process.argv[2] !== undefined) {
 	urlsToScrape = await db.retrieveURLsToScrape();
 }
 
+let status = new Worker("./status.ts", { type: "module" });
+let lemmatizationMap = await loadLemmatizationMap();
+
 console.log(
 	"URLs to scrape:",
 	Array.from(urlsToScrape).map((item) => item.url)
@@ -90,6 +94,8 @@ async function scrapeURL(url: string, url_id: number) {
 		return;
 	}
 
+	const robotsResult = await checkRobotsTxt(url);
+
 	currentlyScraping.push(originalUrl);
 
 	if (await db.isURLScraped(url)) {
@@ -106,7 +112,7 @@ async function scrapeURL(url: string, url_id: number) {
 	}
 
 	try {
-		await scrapeWebsite.scrapeEntireWebsite(url, url_id, 50);
+		await scrapeWebsite.scrapeEntireWebsite(url, url_id, 50, lemmatizationMap);
 		await db.scrapedURL(url);
 		currentlyScraping = currentlyScraping.filter((u: any) => u !== originalUrl);
 	} catch (error) {

@@ -4,6 +4,7 @@ import { sleep } from "bun";
 import * as cheerio from "cheerio";
 import customFetch from "./utils/fetch";
 import puppeteer from "puppeteer";
+import { checkRobotsTxt } from "./utils/checkRobotsTxt"
 
 declare var self: Worker;
 
@@ -33,121 +34,38 @@ function fetchButton(url: string): Promise<Response> {
 	return customFetch(url);
 }
 
-async function scrapeSinglePath(path: string, website_id: number): Promise<Button[]> {
-	return new Promise(async (resolve, reject) => {
-		try {
-			let totalButtonData: Button[] = [];
-			const response = await customFetch(path); // 10 second timeout
-			if (!response.ok) {
-				console.error("error: ", response.statusText);
-				return [];
-			}
-			const $ = cheerio.load(await response.text());
-			const baseUrl = new URL(path).origin;
-			const images = $("img").toArray();
-			for (const element of images) {
-
-				if (!$(element).attr("src")) continue;
-
-				var src = $(element).attr("src") as any;
-				if (src && !src.startsWith("http")) {
-					src = new URL(src, path).href;
-				}
-
-				let links_to = null;
-				const parentAnchor = $(element).closest("a");
-				if (parentAnchor.length > 0 && parentAnchor.attr("href")) {
-					const href = parentAnchor.attr("href")!;
-					try {
-						if (!href.startsWith("http://") && !href.startsWith("https://")) {
-							if (href.startsWith("/")) {
-								links_to = new URL(href, `https://${baseUrl}`).href;
-							} else {
-								links_to = `https://${href}`;
-							}
-						} else {
-							links_to = href;
-						}
-					} catch (error) {
-						console.log("Invalid URL:", href, error);
-						links_to = href; // Keep the original href as a fallback
-					}
-				}
-
-				if (!src) continue;
-				let button = await fetchButton(src);
-
-				if (!button.ok) {
-					console.log("Failed to fetch image:", src);
-					console.error("error: ", button.statusText);
-					continue;
-				}
-
-				let buttonBuffer = Buffer.from(await button.arrayBuffer());
-
-				if (buttonBuffer.length === 0) {
-					console.log("Empty image buffer for:", src);
-					continue;
-				}
-
-				try {
-					const { width, height } = getImageSize(buttonBuffer);
-					if (!(width === 88 && height === 31)) {
-						continue;
-					}
-				} catch (error) {
-					continue;
-				}
-
-				const filename = $(element).attr("src") as string;
-				const scraped_date = new Date();
-				const found_url = path;
-				const hash = db.hash(buttonBuffer) as string;
-
-				// Check if this button is already in totalButtonData
-				if (totalButtonData.some((btn) => btn.hash === hash)) {
-					continue;
-				}
-
-				const buttonData: Button = {
-					image: buttonBuffer,
-					filename: filename,
-					scraped_date: scraped_date,
-					found_url: found_url,
-					hash: hash,
-					src: src,
-					links_to,
-				};
-
-				totalButtonData.push(buttonData);
-
-				// Mark the URL as scraped only after successfully adding the button data
-				await db.scrapedURLPath(new URL(path).pathname);
-			}
-
-			for (let button of totalButtonData) {
-				if (button.src) await db.addURLToScrape(new URL(button.src).href);
-				if (button.links_to) await db.addURLToScrape(new URL(button.links_to).href);
-				db.insertButton(button, website_id);
-			}
-
-			return resolve(totalButtonData);
-
-
-		} catch (error) {
-			console.error(`Failed to scrape path: ${path}`, error);
-			return reject([]);
-		}
-	});
-}
-
-export async function scrapeEntireWebsite(url: string, website_id: number, maxPages: number = 100): Promise<Button[]> {
+export async function scrapeEntireWebsite(url: string, website_id: number, maxPages: number = 50, lemmatizationMap: Map<string, string>): Promise<Button[]> {
 	return new Promise(async (resolve, reject) => {
 		try {
 			if (!url.startsWith("http://") && !url.startsWith("https://")) {
 				url = "https://" + url;
 				url = new URL(url).href;
 			}
+
+			const robotsResult = await checkRobotsTxt(url);
+			if (!robotsResult) {
+				console.log("No robots.txt found or empty.");
+			} else {
+				const allowedUrls = robotsResult.allowed.map((rule: string) => new URL(rule, url).href);
+				const disallowedUrls = robotsResult.disallowed.map((rule: string) => new URL(rule, url).href);
+
+				const isDisallowed = (checkUrl: string) => 
+					disallowedUrls.some((disallowedUrl) => checkUrl.startsWith(disallowedUrl));
+
+				const isAllowed = (checkUrl: string) => 
+					allowedUrls.some((allowedUrl) => checkUrl.startsWith(allowedUrl));
+
+				if (isDisallowed(url)) {
+					console.log("URL is disallowed by robots.txt:", url);
+					return reject("URL is disallowed by robots.txt");
+				}
+
+				if (!isAllowed(url)) {
+					console.log("URL is not explicitly allowed by robots.txt:", url);
+					return reject("URL is not explicitly allowed by robots.txt");
+				}
+			}
+
 			const response = await customFetch(url);
 
 			if (!response.ok) {
