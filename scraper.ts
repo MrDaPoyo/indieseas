@@ -79,13 +79,14 @@ console.log(
 );
 
 async function scrapeURL(url: string, url_id: number) {
+	const originalUrl = url;
 	if (prohibitedURLs.some((prohibited) => url.includes(prohibited))) {
 		console.log(`Skipping prohibited URL: ${url}`);
 		await db.scrapedURL(url);
 		return;
 	}
 
-	currentlyScraping.push(url);
+	currentlyScraping.push(originalUrl);
 
 	if (await db.isURLScraped(url)) {
 		console.log(`Already scraped ${url}.`);
@@ -103,8 +104,9 @@ async function scrapeURL(url: string, url_id: number) {
 	try {
 		await scrapeWebsite.scrapeEntireWebsite(url, url_id, 50);
 		await db.scrapedURL(url);
+		currentlyScraping = currentlyScraping.filter((u: any) => u !== originalUrl);
 	} catch (error) {
-		currentlyScraping = currentlyScraping.filter((u: any) => u !== url);
+		currentlyScraping = currentlyScraping.filter((u: any) => u !== originalUrl);
 		await db.scrapedURL(url);
 	}
 }
