@@ -11,6 +11,7 @@ export const scrapedURLs = pgTable("scrapedURLs", {
   url: text().notNull().unique(),
   scraped_date: timestamp({ mode: "date" }).defaultNow(),
   scraped: boolean().notNull().default(false),
+  title: text(),
   hash: text().unique().notNull(),
 });
 
@@ -22,6 +23,7 @@ export const buttons = pgTable("buttons", {
   hash: text().unique().notNull(),
   image: bytea,
   src: text().notNull(),
+  alt: text(),
   links_to: text(),
 });
 
@@ -54,6 +56,7 @@ export type Button = {
   src: string;
   links_to?: string | null;
   website_id?: number | null;
+  alt?: string | null;
 };
 
 export type ScrapedURL = {

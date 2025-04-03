@@ -88,7 +88,11 @@ export async function retrieveURLId(url: string) {
 
 export async function scrapedURL(url: string) {
 	try {
-		url = new URL(url).hostname;
+		if (url.startsWith("http://") || url.startsWith("https://")) {
+			url = new URL(url).hostname;
+		} else {
+			url = new URL("https://" + url).hostname;
+		}
 		await db.update(schema.scrapedURLs)
 			.set({ scraped: true, scraped_date: new Date() })
 			.where(eq(schema.scrapedURLs.url, url));

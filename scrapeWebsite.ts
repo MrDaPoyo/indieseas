@@ -21,6 +21,7 @@ export type Button = {
 	website_id?: number | null;
 	height?: number;
 	width?: number;
+	alt?: string | null;
 };
 
 function getImageSize(buffer: Buffer): { width: number; height: number } {
@@ -292,6 +293,7 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 									links_to: btn.links_to,
 									height: btn.size.height,
 									width: btn.size.width,
+									alt: btn.alt,
 								};
 							});
 
