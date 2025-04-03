@@ -101,7 +101,7 @@ async function scrapeURL(url: string, url_id: number) {
 	}
 
 	try {
-		await scrapeWebsite.scrapeEntireWebsite(url, url_id);
+		await scrapeWebsite.scrapeEntireWebsite(url, url_id, 50);
 		await db.scrapedURL(url);
 	} catch (error) {
 		currentlyScraping = currentlyScraping.filter((u: any) => u !== url);
