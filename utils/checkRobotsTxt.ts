@@ -97,10 +97,8 @@ function parseRobotsTxt(content: string): RobotsRule[] {
 }
 
 interface RobotsResult {
-    [userAgent: string]: {
-        allowed: string[];
-        disallowed: string[];
-    };
+    allowed: string[];
+    disallowed: string[];
 }
 
 function getAllowedPaths(rules: RobotsRule[], userAgents: string[], baseUrl: string): RobotsResult {
