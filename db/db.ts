@@ -185,7 +185,6 @@ export async function addURLToScrape(url: string) {
 		console.log("Added URL to scrape: " + url);
 		return returning;
 	} catch (error) {
-		console.error(error);
 		return false;
 	}
 }
