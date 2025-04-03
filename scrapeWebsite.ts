@@ -246,7 +246,7 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 					break;
 				}
 
-				const path = Array.from(toVisit)[0];
+				let path = Array.from(toVisit)[0];
 				if (!path) break;
 				toVisit.delete(path);
 
@@ -257,9 +257,15 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 				const isScraped = await db.isURLScraped(path);
 				if (isScraped) continue;
 
-				console.log(`Scraping (${++pagesScraped}/${maxPages}):`, baseUrl + path);
+				if (path.startsWith("/")) {
+					path = baseUrl + path;
+				} else if (path.startsWith("http://") || path.startsWith("https://")) {
+					path = new URL(path).href;
+				}
+
+				console.log(`Scraping (${++pagesScraped}/${maxPages}):`, path);
 				try {
-					const buttons = await fetch(`${process.env.WORKER_URL}?path=${baseUrl + path}&key=${process.env.WORKER_KEY}`, {
+					const buttons = await fetch(`${process.env.WORKER_URL}?path=${path}&key=${process.env.WORKER_KEY}`, {
 						method: "GET",
 					});
 
@@ -294,8 +300,8 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 									console.log("Invalid button dimensions:", button.width, button.height);
 									return;
 								}
-								if (button.src) db.addURLToScrape(new URL(button.src).href);
-								if (button.links_to) db.addURLToScrape(new URL(button.links_to).href);
+								if (button.src && !button.src.startsWith("/")) db.addURLToScrape(new URL(button.src).hostname);
+								if (button.links_to) db.addURLToScrape(new URL(button.links_to).hostname);
 								db.insertButton(button, website_id);
 							});
 
