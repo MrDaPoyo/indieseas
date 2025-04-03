@@ -80,6 +80,10 @@ console.log(
 
 async function scrapeURL(url: string, url_id: number) {
 	const originalUrl = url;
+	if (!url) {
+		console.log("No URL provided.");
+		return;
+	}
 	if (prohibitedURLs.some((prohibited) => url.includes(prohibited))) {
 		console.log(`Skipping prohibited URL: ${url}`);
 		await db.scrapedURL(url);
