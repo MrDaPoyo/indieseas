@@ -122,7 +122,7 @@ export async function isURLScraped(url: string) {
 	}
 }
 
-export async function addURLPathToScrape(url: string, amount_of_buttons: number = 0) {
+export async function addURLPathToScrape(url: string) {
 	try {
 		const existing = await db.query.visitedURLs.findFirst({
 			where: eq(schema.visitedURLs.path, url),
@@ -134,7 +134,7 @@ export async function addURLPathToScrape(url: string, amount_of_buttons: number 
 
 		const returning = await db
 			.insert(schema.visitedURLs)
-			.values({ path: url, amount_of_buttons: amount_of_buttons });
+			.values({ path: url });
 		return returning;
 	} catch (error) {
 		console.error(error);
@@ -142,12 +142,38 @@ export async function addURLPathToScrape(url: string, amount_of_buttons: number 
 	}
 }
 
-export async function scrapedURLPath(url: string) {
+export async function scrapedURLPath(url: string, amount_of_buttons: number = 0, title: string = "", description: string = "", text: string = "") {
 	try {
 		await db
 			.update(schema.visitedURLs)
-			.set({ visited_date: new Date() })
+			.set({ visited_date: new Date(), amount_of_buttons: amount_of_buttons, title: title, description: description })
 			.where(eq(schema.visitedURLs.path, url));
+
+		const keywords = text.toLowerCase()
+			.replace(/[^\w\s]/g, '')
+			.split(/\s+/)
+			.filter(word => !['the', 'and', 'for', 'this', 'that'].includes(word))
+
+		const urlId = await retrieveURLId(url);
+		if (urlId) {
+			for (const keyword of keywords) {
+				const existingKeyword = await db.query.websitesIndex.findFirst({
+					where: eq(schema.websitesIndex.keyword, keyword)
+				});
+				
+				if (existingKeyword) {
+					if (!existingKeyword.websites.includes(urlId)) {
+						await db.update(schema.websitesIndex)
+							.set({ websites: [...existingKeyword.websites, urlId] })
+							.where(eq(schema.websitesIndex.keyword, keyword));
+					}
+				} else {
+					// create new keyword
+					await db.insert(schema.websitesIndex)
+						.values({ keyword: keyword, websites: [urlId] });
+				}
+			}
+		}
 		return true;
 	} catch (error) {
 		console.log("Error at addURLPathToScrape: " + error);

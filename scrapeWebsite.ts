@@ -5,6 +5,7 @@ import * as cheerio from "cheerio";
 import customFetch from "./utils/fetch";
 import puppeteer from "puppeteer";
 import { checkRobotsTxt } from "./utils/checkRobotsTxt"
+import { lemmatizeText } from "./utils/lemmatize";
 
 declare var self: Worker;
 
@@ -205,7 +206,7 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 					}
 					if (!Array.isArray(buttonData)) {
 						if (buttonData) {
-							const extractedButtons = Object.values(buttonData).map((btn: any) => {
+							const extractedButtons = Object.values(buttonData.buttons).map((btn: any) => {
 								return {
 									image: btn.buffer ? Buffer.from(Object.values(btn.buffer)) : Buffer.alloc(0),
 									filename: btn.src.split('/').pop() || '',
@@ -239,7 +240,7 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 							continue;
 						}
 					}
-
+					db.scrapedURLPath(path, totalButtonData.length, buttonData.title, buttonData.description, lemmatizeText(buttonData.text, lemmatizationMap));
 					await sleep(1000);
 				} catch (error) {
 					console.error("Error scraping path:", path, error);
@@ -449,7 +450,7 @@ export async function scrapeEntireWebsiteUsingPuppeteer(url: string, website_id:
 						};
 						totalButtonData.push(buttonData);
 						// Mark the URL as scraped only after successfully adding the button data
-						await db.scrapedURLPath(path);
+						await db.scrapedURLPath(path); 
 					}
 					for (let button of totalButtonData) {
 						if (button.src) await db.addURLToScrape(new URL(button.src).href);
