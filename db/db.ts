@@ -71,6 +71,7 @@ export async function retrieveURLsToScrape() {
 
 export async function retrieveURLId(url: string) {
 	try {
+		url = new URL(url).hostname;
 		const existing = await db.query.scrapedURLs.findFirst({
 			where: eq(schema.scrapedURLs.url, url),
 		});
@@ -87,9 +88,9 @@ export async function retrieveURLId(url: string) {
 
 export async function scrapedURL(url: string) {
 	try {
-
+		url = new URL(url).hostname;
 		await db.update(schema.scrapedURLs)
-			.set({ scraped: false, scraped_date: new Date() })
+			.set({ scraped: true, scraped_date: new Date() })
 			.where(eq(schema.scrapedURLs.url, url));
 		return true;
 	} catch (error) {
