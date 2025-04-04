@@ -3,7 +3,6 @@ import { imageSize } from "image-size";
 import { sleep } from "bun";
 import * as cheerio from "cheerio";
 import customFetch from "./utils/fetch";
-import puppeteer from "puppeteer";
 import { checkRobotsTxt } from "./utils/checkRobotsTxt"
 import { lemmatizeText } from "./utils/lemmatize";
 
