@@ -8,11 +8,12 @@ export async function loadLemmatizationMap() {
             lemmatizationList.set(word, lemma);
         }
     }
-    globalThis.lemmatizationList = lemmatizationList;
     return lemmatizationList;
 }
+
+export const lemmatizationList = await loadLemmatizationMap();
   
-export function lemmatizeWord(word: string, lemmatizationList: Map<string, string>): string {
+export function lemmatizeWord(word: string): string {
     const lowerWord = word.toLowerCase().trim();
     if (lemmatizationList.has(lowerWord)) {
         const lemma = lemmatizationList.get(lowerWord) || word;
@@ -21,10 +22,10 @@ export function lemmatizeWord(word: string, lemmatizationList: Map<string, strin
     return word;
 }
 
-export function lemmatizeText(text: string, lemmatizationList: Map<string, string>): string[] {
+export function lemmatizeText(text: string): string[] {
     if (!text) return [];
     const words = text.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean);
-    return words.map((word) => lemmatizeWord(word, lemmatizationList)); 
+    return words.map((word) => lemmatizeWord(word)); 
 }
 
 export function listToString(list: string[]) {

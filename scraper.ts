@@ -1,10 +1,9 @@
 import { sleep } from "bun";
-import * as db from "./db/db";
 import * as scrapeWebsite from "./scrapeWebsite";
-import { loadLemmatizationMap } from "./utils/lemmatize";
 import { checkRobotsTxt } from "./utils/checkRobotsTxt";
+import { lemmatizationList } from "./utils/lemmatize";
 
-console.log("IndieSearch scraper running.");
+import * as db from "./db/db";
 
 let currentlyScraping = [] as any;
 const MAX_CONCURRENT_SCRAPERS =
@@ -75,7 +74,6 @@ if (process.argv[2] !== undefined) {
 }
 
 let status = new Worker("./search.tsx", { type: "module" });
-let lemmatizationMap = await loadLemmatizationMap();
 
 console.log(
 	"URLs to scrape:",
@@ -112,7 +110,7 @@ async function scrapeURL(url: string, url_id: number) {
 	}
 
 	try {
-		await scrapeWebsite.scrapeEntireWebsite(url, url_id, 50, lemmatizationMap);
+		await scrapeWebsite.scrapeEntireWebsite(url, url_id, 50, lemmatizationList);
 		await db.scrapedURL(url);
 		currentlyScraping = currentlyScraping.filter((u: any) => u !== originalUrl);
 	} catch (error) {

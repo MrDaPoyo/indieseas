@@ -1,6 +1,8 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, inArray } from "drizzle-orm";
 import * as schema from "./schema";
+import { lemmatizeWord } from "../utils/lemmatize";
+
 
 export let db = drizzle(process.env.DB_URL! as string, { schema: schema });
 
@@ -252,12 +254,14 @@ export async function removeURLEntirely(url: string) {
 
 export async function search(query: string) {
 	let keywords = [] as string[];
-	for (const char of query)
+	for (const char of query.split(" ")) {
 		if (!keywords.includes(char))
-			keywords.push(char);
+			keywords.push(lemmatizeWord(char));
+	}
 	if (keywords.length === 0) {
 		return [];
 	}
+	console.log("Keywords: ", keywords);
 	try {
 		const results = await db
 			.select()
@@ -265,19 +269,29 @@ export async function search(query: string) {
 			.where(eq(schema.websitesIndex.keyword, query))
 			.execute();
 
+		console.log("Results: ", results);
+
 		if (results.length > 0) {
-			const websiteIds = results[0].websites;
-			if (websiteIds.length === 0) {
+			let websiteIds = [] as number[];
+			results.forEach((result) => {
+				websiteIds = result.websites;
+			});
+
+			if (websiteIds.length == 0) {
 				return [];
 			}
-			const websites = await db
-				.select()
-				.from(schema.visitedURLs)
-				.where(
-					inArray(schema.visitedURLs.url_id, websiteIds)
-				)
-				.execute();
-			return websites;
+			let actualResults = [] as any[];
+			for (let websiteId of websiteIds) {
+				console.log("Website ID: ", websiteId);
+				const results = await db
+					.select()
+					.from(schema.visitedURLs)
+					.where(eq(schema.visitedURLs.url_id, websiteId))
+					.execute();
+				
+				actualResults = actualResults.concat(results);
+			}
+			return actualResults;
 		} else {
 			return [];
 		}
@@ -287,6 +301,6 @@ export async function search(query: string) {
 	}
 }
 
-search("and").then((result) => {
-	console.log(result);
+await search("deprecated").then(async (result) => {
+	console.log("result", result);
 });
