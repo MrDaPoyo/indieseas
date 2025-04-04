@@ -22,6 +22,9 @@ export function lemmatizeWord(word: string, lemmatizationList: Map<string, strin
 
 export function lemmatizeText(text: string, lemmatizationList: Map<string, string>) {
     const words = text.split(/\s+/);
-    const lemmatizedWords = words.map((word) => lemmatizeWord(word, lemmatizationList));
-    return lemmatizedWords.join(" ");
+    return words.map((word) => lemmatizeWord(word, lemmatizationList)); 
+}
+
+export function listToString(list: string[]) {
+    return list.join(" ");
 }
