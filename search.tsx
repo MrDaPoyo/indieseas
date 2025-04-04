@@ -82,5 +82,5 @@ Bun.serve({
 			});
 		}
 	},
-	port: 8080,
+	port: process.env.SEARCH_PORT || 8080,
 });
