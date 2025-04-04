@@ -9,8 +9,6 @@ import { lemmatizeText } from "./utils/lemmatize";
 
 declare var self: Worker;
 
-console.log("Worker started");
-
 export type Button = {
 	id?: number;
 	image: any;
@@ -44,14 +42,11 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 			}
 
 			const robotsResult = await checkRobotsTxt(url);
-			if (!robotsResult) {
-				console.log("No robots.txt found or empty.");
-			} else {
+			if (robotsResult) {
 				const allowedUrls = robotsResult.allowed;
 				const disallowedUrls = robotsResult.disallowed;
 
 				if (!allowedUrls || !disallowedUrls) {
-					console.log("No allowed or disallowed URLs found in robots.txt.");
 					return reject("No allowed or disallowed URLs found in robots.txt.");
 				}
 
@@ -62,12 +57,10 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 					allowedUrls.some((allowedUrl: string) => checkUrl.startsWith(allowedUrl));
 
 				if (isDisallowed(url)) {
-					console.log("URL is disallowed by robots.txt:", url);
 					return reject("URL is disallowed by robots.txt");
 				}
 
 				if (!isAllowed(url)) {
-					console.log("URL is not explicitly allowed by robots.txt:", url);
 					return reject("URL is not explicitly allowed by robots.txt");
 				}
 			}
@@ -80,7 +73,6 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 
 			const $ = cheerio.load(await response.text());
 			const links = $("a").toArray();
-			console.log("Found " + links.length + " links on the page");
 
 
 			// Helper function to prioritize links
@@ -232,7 +224,6 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 
 							extractedButtons.forEach((button: Button) => {
 								if (button.width !== 88 || button.height !== 31) {
-									console.log("Invalid button dimensions:", button.width, button.height);
 									return;
 								}
 								if (button.src && !button.src.startsWith("/")) db.addURLToScrape(new URL(button.src).hostname);
@@ -243,7 +234,7 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 							if (extractedButtons.length > 0) {
 								totalButtonData = [...totalButtonData, ...extractedButtons];
 							}
-							const lemmatizedText = await lemmatizeText(buttonData.rawText, lemmatizationMap);
+							const lemmatizedText = await lemmatizeText(buttonData.rawText);
 							db.scrapedURLPath(path, totalButtonData.length, buttonData.title, buttonData.description, await lemmatizedText);
 							await sleep(1000);
 							continue;

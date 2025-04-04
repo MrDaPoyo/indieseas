@@ -44,9 +44,7 @@ if (process.argv[2] === "--nekoweb") {
 	const allButtons = await db.retrieveAllButtons();
 
 	if (allButtons)
-		console.log(
-			(await allButtons.length) + " Buttons Found so far."
-		);
+		console.log((await allButtons.length) + " Buttons Found so far.");
 	console.log(
 		(await Array.from(await db.retrieveAllScrapedURLs()).length) +
 			" URLS Scraped so far."
@@ -56,10 +54,22 @@ if (process.argv[2] === "--nekoweb") {
 			" URLs to scrape."
 	);
 	process.exit(0);
+} else if (process.argv[2] === "--check-url") {
+	const urlToCheck = process.argv[3];
+	if (!urlToCheck) {
+		console.error("Please provide a URL to check.");
+		process.exit(1);
+	}
+	if (await db.isURLScraped(urlToCheck)) {
+		console.log(`URL ${urlToCheck} has already been scraped.`);
+	} else {
+		console.log(`URL ${urlToCheck} has not been scraped yet.`);
+	}
+	process.exit(0);
 }
 
 if (urlsToScrape.length === 0) {
-	if (process.argv[2] !== undefined && process.argv[2] !== "--nekoweb") {
+	if (process.argv[2] != undefined && process.argv[2] != "--nekoweb") {
 		await db.removeURLEntirely(process.argv[2]);
 		await db.addURLToScrape(process.argv[2]);
 	}
@@ -73,7 +83,7 @@ if (process.argv[2] !== undefined) {
 	urlsToScrape = await db.retrieveURLsToScrape();
 }
 
-let status = new Worker("./search.tsx", { type: "module" });
+let search = new Worker("./search.tsx", { type: "module" });
 
 console.log(
 	"URLs to scrape:",
@@ -92,8 +102,6 @@ async function scrapeURL(url: string, url_id: number) {
 		return;
 	}
 
-	const robotsResult = await checkRobotsTxt(url);
-
 	currentlyScraping.push(originalUrl);
 
 	if (await db.isURLScraped(url)) {
@@ -110,12 +118,31 @@ async function scrapeURL(url: string, url_id: number) {
 	}
 
 	try {
-		await scrapeWebsite.scrapeEntireWebsite(url, url_id, 50, lemmatizationList);
-		await db.scrapedURL(url);
-		currentlyScraping = currentlyScraping.filter((u: any) => u !== originalUrl);
+		// Create a worker for scraping
+		const worker = new Worker("./scraperWorker.ts", {
+			type: "module",
+		});
+
+		worker.addEventListener("open", () => {
+			worker.postMessage({ url, website_id: url_id, maxPages: 50 });
+		});
+
+		await new Promise<void>((resolve) => {
+			worker.onmessage = async (event) => {
+				if (event.data.success) {
+					console.log(`Successfully scraped ${url}`);
+				} else if (!event.data.success) {
+					console.error(`Error scraping ${url}:`, event.data.error);
+				}
+				resolve();
+			};
+		});
 	} catch (error) {
-		currentlyScraping = currentlyScraping.filter((u: any) => u !== originalUrl);
-		await db.scrapedURL(url);
+		console.error(`Error scraping ${url}:`, error);
+	} finally {
+		currentlyScraping = currentlyScraping.filter(
+			(u: any) => u !== originalUrl
+		);
 	}
 }
 
@@ -125,11 +152,18 @@ while (true) {
 	const availableSlots = MAX_CONCURRENT_SCRAPERS - currentlyScraping.length;
 	const urlsToProcess = urlsToScrape.slice(0, availableSlots);
 
-	for (let url of urlsToProcess) {
+	// Start multiple scrape operations concurrently
+	const scrapePromises = urlsToProcess.map(url => {
 		if (!currentlyScraping.includes(url.url)) {
 			console.log(`Starting to scrape from scraper.ts: ${url.url}`);
-			await scrapeURL(url.url, url.url_id);
+			return scrapeURL(url.url, url.url_id);
 		}
+		return Promise.resolve();
+	});
+
+	// Wait for any scrape operations to complete before checking again
+	if (scrapePromises.length > 0) {
+		await Promise.all(scrapePromises);
 	}
 
 	console.log(
