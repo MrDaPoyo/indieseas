@@ -27,8 +27,7 @@ self.onmessage = async (event: MessageEvent) => {
 			await scrapeWebsite.scrapeEntireWebsite(
 				url,
 				website_id,
-				maxPages,
-				lemmatizationList
+				maxPages
 			);
 			await db.scrapedURL(url);
 		} catch (error: any) {

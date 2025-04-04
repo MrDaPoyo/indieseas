@@ -30,7 +30,7 @@ function fetchButton(url: string): Promise<Response> {
 	return customFetch(url);
 }
 
-export async function scrapeEntireWebsite(url: string, website_id: number, maxPages: number = 50, lemmatizationMap: Map<string, string>): Promise<Button[]> {
+export async function scrapeEntireWebsite(url: string, website_id: number, maxPages: number = 50): Promise<Button[]> {
 	return new Promise(async (resolve, reject) => {
 		try {
 			if (!url.startsWith("http://") && !url.startsWith("https://")) {
