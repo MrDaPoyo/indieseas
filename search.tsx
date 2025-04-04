@@ -12,8 +12,45 @@ function Layout(props: { children: React.ReactNode }) {
 
 function Status({ urlCount, buttonCount }: { urlCount: number, buttonCount: number }) {
 	return (
-		<Layout>
+		<>
 			<p>Found {buttonCount} Buttons across {urlCount} scraped and indexed pages.</p>
+			<Search query=""/>
+		</>
+	);
+}
+
+function Search({ query }: { query: string }) {
+	return (
+		<Layout>
+			<form action="/query" method="GET">
+				<input type="text" name="q" placeholder="Search..." defaultValue={query} />
+				<button type="submit">Search</button>
+			</form>
+			<div id="results"></div>
+			<p>Found {query.length} results for "{query}"</p>
+			<script dangerouslySetInnerHTML={{
+				__html: `
+					document.querySelector('form').addEventListener('submit', async (e) => {
+						e.preventDefault();
+						const query = document.querySelector('input[name="q"]').value;
+						const response = await fetch('/query?q=' + encodeURIComponent(query));
+						
+						if (response.ok) {
+							const results = await response.json();
+							const resultsHTML = results.map(item => \`
+								<div class="result">
+									<h3><a href="\${item.url}">\${item.url}</a></h3>
+									<p>ID: \${item.url_id} | Scraped: \${new Date(item.scraped_date).toLocaleDateString()}</p>
+									\${item.title ? \`<p>Title: \${item.title}</p>\` : ''}
+								</div>
+							\`).join('');
+							
+							document.getElementById('results').innerHTML = resultsHTML;
+						} else {
+							document.getElementById('results').innerHTML = '<p>No results found</p>';
+						}
+					});`
+			}} />
 		</Layout>
 	);
 }
@@ -23,7 +60,8 @@ Bun.serve({
 	routes: {
 		"/": async () => {
 			const urlCount = (await db.retrieveAllScrapedURLs()).length;
-			const buttonCount = (await db.retrieveAllButtons()).length;
+			const buttons = await db.retrieveAllButtons();
+			const buttonCount = Array.isArray(buttons) ? buttons.length : 0;
 			return new Response(renderToString(<Status urlCount={urlCount} buttonCount={buttonCount} />), {
 				headers: {
 					"Content-Type": "text/html",
@@ -31,20 +69,18 @@ Bun.serve({
 			});
 		},
 		"/query": async (req) => {
-			const query = new URL(req.url).searchParams.get("q");
+			const url = new URL(req.url);
+			const query = url.searchParams.get("q") || "";
 			if (!query) {
 				return new Response("No query provided", { status: 400 });
 			}
-			const result = db.search(query);
-			if (result.length === 0) {
-				return new Response("No results found", { status: 404 });
-			}
-			const response = result.map((item: any) => {
-				return `<div>
-					<a href="${item.url}">${item.url}</a>
-					<p>${item.text}</p>
-				</div>`;
-			}
+			const results = await db.search(query);
+			return new Response(JSON.stringify(results), {
+				headers: {
+					"Content-Type": "application/json",
+				},
+			});
+		}
 	},
 	port: 8080,
 });

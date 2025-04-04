@@ -132,7 +132,7 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 
 				if (href.startsWith('/')) {
 					urlToScrape = new URL(baseUrl + href).href;
-					await db.addURLPathToScrape(new URL(href).href);
+					await db.addURLPathToScrape(urlToScrape);
 				}
 				try {
 					let normalizedHref: string;

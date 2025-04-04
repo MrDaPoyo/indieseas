@@ -254,22 +254,40 @@ export async function removeURLEntirely(url: string) {
 
 export async function search(query: string) {
 	let keywords = [] as string[];
-	for (const char of query.split(" ")) {
+	for (let char of query.split(" ")) {
+		if (char.includes("http://") || char.includes("https://") || char.includes(".")) {
+			if (char.startsWith("http://") || char.startsWith("https://")) {
+				char = new URL(char).hostname;
+			} else {
+				char = new URL("https://" + char).hostname;
+			}
+			keywords.push(char.toLowerCase().trim());
+		}
 		if (!keywords.includes(char))
-			keywords.push(lemmatizeWord(char));
+			keywords.push(lemmatizeWord(char.toLowerCase().trim().replace(/[^a-zA-Z0-9]/g, "")));
 	}
 	if (keywords.length === 0) {
 		return [];
 	}
 	console.log("Keywords: ", keywords);
 	try {
+		const websiteKeywords = keywords.filter(k => k.includes('.'));
+		if (websiteKeywords.length > 0) {
+			const websiteResults = await db
+				.select()
+				.from(schema.scrapedURLs)
+				.where(inArray(schema.scrapedURLs.url, websiteKeywords))
+				.execute();
+			
+			if (websiteResults.length > 0) {
+				return websiteResults;
+			}
+		}
 		const results = await db
 			.select()
 			.from(schema.websitesIndex)
 			.where(eq(schema.websitesIndex.keyword, query))
 			.execute();
-
-		console.log("Results: ", results);
 
 		if (results.length > 0) {
 			let websiteIds = [] as number[];
@@ -282,13 +300,11 @@ export async function search(query: string) {
 			}
 			let actualResults = [] as any[];
 			for (let websiteId of websiteIds) {
-				console.log("Website ID: ", websiteId);
 				const results = await db
 					.select()
-					.from(schema.visitedURLs)
-					.where(eq(schema.visitedURLs.url_id, websiteId))
+					.from(schema.scrapedURLs)
+					.where(eq(schema.scrapedURLs.url_id, websiteId))
 					.execute();
-				
 				actualResults = actualResults.concat(results);
 			}
 			return actualResults;
@@ -300,7 +316,3 @@ export async function search(query: string) {
 		return [];
 	}
 }
-
-await search("deprecated").then(async (result) => {
-	console.log("result", result);
-});
