@@ -1,5 +1,6 @@
 import * as db from "./db/db";
 import { renderToString } from "react-dom/server";
+import React from "react";
 
 function Layout(props: { children: React.ReactNode }) {
 	return (
@@ -27,7 +28,6 @@ function Search({ query }: { query: string }) {
 				<button type="submit">Search</button>
 			</form>
 			<div id="results"></div>
-			<p>Found {query.length} results for "{query}"</p>
 			<script dangerouslySetInnerHTML={{
 				__html: `
 					document.querySelector('form').addEventListener('submit', async (e) => {
@@ -39,13 +39,14 @@ function Search({ query }: { query: string }) {
 							const results = await response.json();
 							const resultsHTML = results.map(item => \`
 								<div class="result">
-									<h3><a href="\${item.path}">\${item.path}</a></h3>
-									<p>ID: \${item.url_id} | Scraped: \${new Date(item.scraped_date).toLocaleDateString()}</p>
-									\${item.title ? \`<p>Title: \${item.title}</p>\` : ''}
+									<h3><a href="\${item.path}" target="_blank" rel="noopener noreferrer">\${item.title}</a></h3>
+									\${item.description ? \`<p>Title: \${item.description}</p>\` : ''}
+									<p>Scraped: \${new Date(item.visited_date).toLocaleDateString()}</p>
 								</div>
+								<hr>
 							\`).join('');
 							
-							document.getElementById('results').innerHTML = resultsHTML;
+							document.getElementById('results').innerHTML = "<p>Found " + results.length + " results for '" + query + "'</p><br>" + resultsHTML;
 						} else {
 							document.getElementById('results').innerHTML = '<p>No results found</p>';
 						}
