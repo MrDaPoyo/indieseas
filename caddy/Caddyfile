@@ -1,14 +1,8 @@
 https:// {
-        # Dynamically handle SSL certificates using Caddy's built-in Let's Encrypt integration
-        tls {
-                on_demand # Obtain certificates on-demand based on the requested domain
-        }
-
-        # Proxy requests to localhost:8080
-        reverse_proxy localhost:8080 {
-                header_up Host {host}
-                header_up X-Real-IP {remote_host}
-        }
+    reverse_proxy localhost:8080 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+    }
 }
 
 # Redirect HTTP to HTTPS
