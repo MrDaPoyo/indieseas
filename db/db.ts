@@ -143,7 +143,6 @@ export async function addURLPathToScrape(url: string) {
 }
 
 export async function scrapedURLPath(url: string, amount_of_buttons: number = 0, title: string = "", description: string = "", text: string[]) {
-	console.log(text);
 	try {
 		await db
 			.update(schema.visitedURLs)
@@ -153,7 +152,6 @@ export async function scrapedURLPath(url: string, amount_of_buttons: number = 0,
 		const urlId = await retrieveURLId(url);
 		if (urlId) {
 			for (const keyword of text) {
-				console.log("Keyword: " + keyword);
 				const existingKeyword = await db.query.websitesIndex.findFirst({
 					where: eq(schema.websitesIndex.keyword, keyword)
 				});
@@ -166,7 +164,6 @@ export async function scrapedURLPath(url: string, amount_of_buttons: number = 0,
 					}
 				} else {
 					// create new keyword
-					console.log("new keyword:", keyword)
 					await db.insert(schema.websitesIndex)
 						.values({ keyword: keyword, websites: [urlId] });
 				}
