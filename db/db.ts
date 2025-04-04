@@ -142,21 +142,18 @@ export async function addURLPathToScrape(url: string) {
 	}
 }
 
-export async function scrapedURLPath(url: string, amount_of_buttons: number = 0, title: string = "", description: string = "", text: string = "") {
+export async function scrapedURLPath(url: string, amount_of_buttons: number = 0, title: string = "", description: string = "", text: string[]) {
+	console.log(text);
 	try {
 		await db
 			.update(schema.visitedURLs)
 			.set({ visited_date: new Date(), amount_of_buttons: amount_of_buttons, title: title, description: description })
 			.where(eq(schema.visitedURLs.path, url));
 
-		const keywords = text.toLowerCase()
-			.replace(/[^\w\s]/g, '')
-			.split(/\s+/)
-			.filter(word => !['the', 'and', 'for', 'this', 'that'].includes(word))
-
 		const urlId = await retrieveURLId(url);
 		if (urlId) {
-			for (const keyword of keywords) {
+			for (const keyword of text) {
+				console.log("Keyword: " + keyword);
 				const existingKeyword = await db.query.websitesIndex.findFirst({
 					where: eq(schema.websitesIndex.keyword, keyword)
 				});
@@ -169,6 +166,7 @@ export async function scrapedURLPath(url: string, amount_of_buttons: number = 0,
 					}
 				} else {
 					// create new keyword
+					console.log("new keyword:", keyword)
 					await db.insert(schema.websitesIndex)
 						.values({ keyword: keyword, websites: [urlId] });
 				}

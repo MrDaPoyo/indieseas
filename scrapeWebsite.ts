@@ -55,10 +55,10 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 					return reject("No allowed or disallowed URLs found in robots.txt.");
 				}
 
-				const isDisallowed = (checkUrl: string) => 
+				const isDisallowed = (checkUrl: string) =>
 					disallowedUrls.some((disallowedUrl: string) => checkUrl.startsWith(disallowedUrl));
 
-				const isAllowed = (checkUrl: string) => 
+				const isAllowed = (checkUrl: string) =>
 					allowedUrls.some((allowedUrl: string) => checkUrl.startsWith(allowedUrl));
 
 				if (isDisallowed(url)) {
@@ -234,14 +234,15 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 							if (extractedButtons.length > 0) {
 								totalButtonData = [...totalButtonData, ...extractedButtons];
 							}
+							const lemmatizedText = await lemmatizeText(buttonData.rawText, lemmatizationMap);
+							db.scrapedURLPath(path, totalButtonData.length, buttonData.title, buttonData.description, await lemmatizedText);
+							await sleep(1000);
 							continue;
 						} else {
 							console.error("Unexpected button data format:", buttonData.toString());
 							continue;
 						}
 					}
-					db.scrapedURLPath(path, totalButtonData.length, buttonData.title, buttonData.description, lemmatizeText(buttonData.text, lemmatizationMap));
-					await sleep(1000);
 				} catch (error) {
 					console.error("Error scraping path:", path, error);
 				}
@@ -450,7 +451,7 @@ export async function scrapeEntireWebsiteUsingPuppeteer(url: string, website_id:
 						};
 						totalButtonData.push(buttonData);
 						// Mark the URL as scraped only after successfully adding the button data
-						await db.scrapedURLPath(path); 
+						await db.scrapedURLPath(path);
 					}
 					for (let button of totalButtonData) {
 						if (button.src) await db.addURLToScrape(new URL(button.src).href);
