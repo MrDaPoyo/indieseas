@@ -1,5 +1,5 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import * as schema from "./schema";
 
 export let db = drizzle(process.env.DB_URL! as string, { schema: schema });
@@ -249,3 +249,44 @@ export async function removeURLEntirely(url: string) {
 		return false;
 	}
 }
+
+export async function search(query: string) {
+	let keywords = [] as string[];
+	for (const char of query)
+		if (!keywords.includes(char))
+			keywords.push(char);
+	if (keywords.length === 0) {
+		return [];
+	}
+	try {
+		const results = await db
+			.select()
+			.from(schema.websitesIndex)
+			.where(eq(schema.websitesIndex.keyword, query))
+			.execute();
+
+		if (results.length > 0) {
+			const websiteIds = results[0].websites;
+			if (websiteIds.length === 0) {
+				return [];
+			}
+			const websites = await db
+				.select()
+				.from(schema.visitedURLs)
+				.where(
+					inArray(schema.visitedURLs.url_id, websiteIds)
+				)
+				.execute();
+			return websites;
+		} else {
+			return [];
+		}
+	} catch (error) {
+		console.error("Error at search:", error);
+		return [];
+	}
+}
+
+search("and").then((result) => {
+	console.log(result);
+});

@@ -74,7 +74,7 @@ if (process.argv[2] !== undefined) {
 	urlsToScrape = await db.retrieveURLsToScrape();
 }
 
-let status = new Worker("./status.ts", { type: "module" });
+let status = new Worker("./search.tsx", { type: "module" });
 let lemmatizationMap = await loadLemmatizationMap();
 
 console.log(
