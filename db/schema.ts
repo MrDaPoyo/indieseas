@@ -1,5 +1,4 @@
-import { arrayContained } from "drizzle-orm";
-import { pgTable, text, integer, customType, boolean, serial, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, customType, boolean, serial, timestamp, unique } from "drizzle-orm/pg-core";
 
 const bytea = customType<{ data: Buffer | string; default: false }>({
   dataType() {
@@ -39,9 +38,14 @@ export const visitedURLs = pgTable("visitedURLs", {
 
 export const websitesIndex = pgTable("websites_index", {
   id: serial().primaryKey(),
-  keyword: text().notNull().unique(),
-  websites: integer("websites").array().notNull(),
-});
+  keyword: text().notNull(),
+  website: text().notNull(),
+  idf: integer().notNull(),
+  tf: integer().notNull(),
+  tf_idf: integer().notNull(),
+}, (table) => [
+  unique("keyword_website_unique").on(table.keyword, table.website)
+]);
 
 export const visitedURLsRelations = pgTable("visitedURLs_relations", {
   id: serial().primaryKey(),

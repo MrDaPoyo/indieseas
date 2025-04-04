@@ -1,5 +1,5 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql, and } from "drizzle-orm";
 import * as schema from "./schema";
 import { lemmatizeWord } from "../utils/lemmatize";
 
@@ -73,7 +73,12 @@ export async function retrieveURLsToScrape() {
 
 export async function retrieveURLId(url: string) {
 	try {
-		url = new URL(url).hostname;
+		if (url.startsWith("http://") || url.startsWith("https://")) {
+			url = new URL(url).hostname;
+		} else {
+			url = new URL("https://" + url).hostname;
+		}
+
 		const existing = await db.query.scrapedURLs.findFirst({
 			where: eq(schema.scrapedURLs.url, url),
 		});
@@ -151,30 +156,143 @@ export async function scrapedURLPath(url: string, amount_of_buttons: number = 0,
 			.set({ visited_date: new Date(), amount_of_buttons: amount_of_buttons, title: title, description: description })
 			.where(eq(schema.visitedURLs.path, url));
 
+		const processedText = text.map(word => lemmatizeWord(word.toLowerCase().trim().replace(/[^a-zA-Z0-9]/g, "")));
+		const wordFrequency = new Map<string, number>();
+
+		// count the word frequency
+		for (const word of processedText) {
+			if (word) {
+				wordFrequency.set(word, (wordFrequency.get(word) || 0) + 1);
+			}
+		}
+		let urlObj: string;
+		if (url.startsWith("http://") || url.startsWith("https://")) {
+			urlObj = new URL(url).href;
+		} else {
+			urlObj = new URL("https://" + url).href;
+		}
+		const website = urlObj;
+
+		// Get updated total websites count
+		const totalWebsites = await db.select({ count: sql`count(*)` })
+			.from(schema.scrapedURLs)
+			.where(eq(schema.scrapedURLs.scraped, true))
+			.execute()
+			.then(result => Number(result[0]?.count || 1));
+
+		// Update IDF for all existing keywords first
+		await updateAllIdfValues(totalWebsites);
+
+		// Now process the current document's keywords
+		for (const [word, count] of wordFrequency.entries()) {
+			// calculate TF. count/total words in document
+			const tf = count / Math.max(1, processedText.length);
+
+			// get document frequency (number of documents containing this word)
+			const docFrequency = await db.select({ count: sql`count(*)` })
+				.from(schema.websitesIndex)
+				.where(eq(schema.websitesIndex.keyword, word))
+				.execute()
+				.then(result => Number(result[0]?.count || 0) + 1); // Add 1 to avoid division by zero
+
+			// calculate IDF (inverse document frequency): log(total docs/docs with term)
+			const idf = Math.max(0, Math.log10(totalWebsites / docFrequency));
+
+			// calculate TF-IDF
+			const tfidf = tf * idf;
+
+			// Ensure values are valid integers by clamping to safe range
+			const tfScaled = Math.round(Math.max(0, Math.min(tf, 1)) * 1000);
+			const idfScaled = Math.round(Math.max(0, Math.min(idf, 1000)) * 1000);
+			const tfidfScaled = Math.round(Math.max(0, Math.min(tfidf, 1000)) * 1000);
+
+			await db.insert(schema.websitesIndex)
+				.values({
+					keyword: word,
+					website: website,
+					tf: tfScaled,
+					idf: idfScaled,
+					tf_idf: tfidfScaled
+				})
+				.onConflictDoUpdate({
+					target: [schema.websitesIndex.keyword, schema.websitesIndex.website],
+					set: { tf: tfScaled, idf: idfScaled, tf_idf: tfidfScaled }
+				});
+		}
+
 		const urlId = await retrieveURLId(url);
 		if (urlId) {
 			for (const keyword of text) {
-				const existingKeyword = await db.query.websitesIndex.findFirst({
-					where: eq(schema.websitesIndex.keyword, keyword)
-				});
-				
-				if (existingKeyword) {
-					if (!existingKeyword.websites.includes(urlId)) {
-						await db.update(schema.websitesIndex)
-							.set({ websites: [...existingKeyword.websites, urlId] })
-							.where(eq(schema.websitesIndex.keyword, keyword));
-					}
-				} else {
-					// create new keyword
+				// Process keywords the same way as above to ensure consistency
+				const processedKeyword = lemmatizeWord(keyword.toLowerCase().trim().replace(/[^a-zA-Z0-9]/g, ""));
+				if (!processedKeyword) continue; // Skip empty keywords
+
+				try {
+					// Use upsert to handle potential duplicates
 					await db.insert(schema.websitesIndex)
-						.values({ keyword: keyword, websites: [urlId] });
+						.values({
+							keyword: processedKeyword,
+							website: urlObj,
+							idf: 0,
+							tf: 0,
+							tf_idf: 0
+						})
+						.onConflictDoUpdate({
+							target: [schema.websitesIndex.keyword, schema.websitesIndex.website],
+							set: { website: urlObj }
+						});
+				} catch (err) {
+					console.error(`Error processing keyword ${processedKeyword}:`, err);
 				}
 			}
 		}
 		return true;
 	} catch (error) {
-		console.log("Error at addURLPathToScrape: " + error);
+		console.log("Error at scrapedURLPath: " + error);
 		return false;
+	}
+}
+
+async function updateAllIdfValues(totalWebsites: number) {
+	// get all unique keywords
+	const keywords = await db.select({ keyword: schema.websitesIndex.keyword })
+		.from(schema.websitesIndex)
+		.groupBy(schema.websitesIndex.keyword)
+		.execute();
+
+	for (const { keyword } of keywords) {
+		// get document frequency for this keyword
+		const docFrequency = await db.select({ count: sql`count(DISTINCT website)` })
+			.from(schema.websitesIndex)
+			.where(eq(schema.websitesIndex.keyword, keyword))
+			.execute()
+			.then(result => Number(result[0]?.count || 1));
+
+		// Calculate new IDF value
+		const idf = Math.max(0, Math.log10(totalWebsites / docFrequency));
+		const idfScaled = Math.round(Math.max(0, Math.min(idf, 1000)) * 1000);
+
+		// update all entries for this keyword with new IDF and TF-IDF
+		const entries = await db.select()
+			.from(schema.websitesIndex)
+			.where(eq(schema.websitesIndex.keyword, keyword))
+			.execute();
+
+		for (const entry of entries) {
+			const tfidfScaled = Math.round(Math.max(0, Math.min((entry.tf / 1000) * idf, 1000)) * 1000);
+
+			await db.update(schema.websitesIndex)
+				.set({
+					idf: idfScaled,
+					tf_idf: tfidfScaled
+				})
+				.where(
+					and(
+						eq(schema.websitesIndex.keyword, keyword),
+						eq(schema.websitesIndex.website, entry.website)
+					),
+				).$dynamic();
+		}
 	}
 }
 
@@ -278,7 +396,7 @@ export async function search(query: string) {
 				.from(schema.scrapedURLs)
 				.where(inArray(schema.scrapedURLs.url, websiteKeywords))
 				.execute();
-			
+
 			if (websiteResults.length > 0) {
 				return websiteResults;
 			}
@@ -292,7 +410,7 @@ export async function search(query: string) {
 		if (results.length > 0) {
 			let websiteIds = [] as number[];
 			results.forEach((result) => {
-				websiteIds = result.websites;
+				websiteIds = result.website.split(",").map((id) => parseInt(id));
 			});
 
 			if (websiteIds.length == 0) {
