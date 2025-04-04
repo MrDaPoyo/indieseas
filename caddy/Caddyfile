@@ -1,11 +1,10 @@
-https:// {
-    reverse_proxy localhost:8080 {
+codeserver.indieseas.net {
+        reverse_proxy localhost:8080 {
             header_up Host {host}
             header_up X-Real-IP {remote_host}
-    }
+        }
 }
 
-# Redirect HTTP to HTTPS
-http:// {
-        redir https://{host}{uri} permanent
+indieseas.net {
+        reverse_proxy 127.0.0.1:8000
 }
