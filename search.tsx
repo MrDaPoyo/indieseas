@@ -39,7 +39,7 @@ function Search({ query }: { query: string }) {
 							const results = await response.json();
 							const resultsHTML = results.map(item => \`
 								<div class="result">
-									<h3><a href="\${item.url}">\${item.url}</a></h3>
+									<h3><a href="\${item.path}">\${item.path}</a></h3>
 									<p>ID: \${item.url_id} | Scraped: \${new Date(item.scraped_date).toLocaleDateString()}</p>
 									\${item.title ? \`<p>Title: \${item.title}</p>\` : ''}
 								</div>

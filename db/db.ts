@@ -389,6 +389,7 @@ export async function search(query: string) {
 	}
 	console.log("Keywords: ", keywords);
 	try {
+		// Handle direct website searches first
 		const websiteKeywords = keywords.filter(k => k.includes('.'));
 		if (websiteKeywords.length > 0) {
 			const websiteResults = await db
@@ -401,34 +402,58 @@ export async function search(query: string) {
 				return websiteResults;
 			}
 		}
-		const results = await db
-			.select()
+		
+		// Search by tf-idf for all keywords
+		const keywordsForSearch = keywords.filter(k => k.trim() !== '');
+		if (keywordsForSearch.length === 0) return [];
+		
+		// Get websites with matching keywords and their tf-idf scores
+		const indexResults = await db
+			.select({
+				website: schema.websitesIndex.website,
+				tf_idf: schema.websitesIndex.tf_idf
+			})
 			.from(schema.websitesIndex)
-			.where(eq(schema.websitesIndex.keyword, query))
+			.where(inArray(schema.websitesIndex.keyword, keywordsForSearch))
 			.execute();
-
-		if (results.length > 0) {
-			let websiteIds = [] as number[];
-			results.forEach((result) => {
-				websiteIds = result.website.split(",").map((id) => parseInt(id));
-			});
-
-			if (websiteIds.length == 0) {
-				return [];
-			}
-			let actualResults = [] as any[];
-			for (let websiteId of websiteIds) {
-				const results = await db
-					.select()
-					.from(schema.scrapedURLs)
-					.where(eq(schema.scrapedURLs.url_id, websiteId))
-					.execute();
-				actualResults = actualResults.concat(results);
-			}
-			return actualResults;
-		} else {
-			return [];
+		
+		if (indexResults.length === 0) return [];
+		
+		// Aggregate tf-idf scores by website
+		const websiteScores = new Map<string, number>();
+		for (const result of indexResults) {
+			const currentScore = websiteScores.get(result.website) || 0;
+			websiteScores.set(result.website, currentScore + result.tf_idf);
 		}
+		
+		// Convert to array for sorting
+		const rankedWebsites = Array.from(websiteScores.entries())
+			.map(([website, score]) => ({ website, score }))
+			.sort((a, b) => b.score - a.score); // Sort by score descending
+		
+		// Get full website data for top results
+		const websiteUrls = rankedWebsites.map(item => item.website);
+		const websiteResults = await db
+			.select()
+			.from(schema.visitedURLs)
+			.where(inArray(schema.visitedURLs.path, websiteUrls))
+			.execute();
+		
+		console.log("Website Results: ", websiteResults);
+
+		// Add scores to results and return in ranked order
+		const rankedResults = websiteUrls.map(url => {
+			const website = websiteResults.find(site => {
+				// Normalize URLs for comparison
+				const sitePath = site.path ? new URL(site.path.startsWith('http') ? site.path : `https://${site.path}`).href : '';
+				const normalizedUrl = url ? new URL(url.startsWith('http') ? url : `https://${url}`).href : '';
+				return sitePath === normalizedUrl;
+			});
+			const score = websiteScores.get(url) || 0;
+			return { ...website, tf_idf_score: score };
+		}).filter(result => result.path !== undefined);
+		
+		return rankedResults;
 	} catch (error) {
 		console.error("Error at search:", error);
 		return [];
