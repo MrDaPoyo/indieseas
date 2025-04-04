@@ -40,7 +40,7 @@ function Search({ query }: { query: string }) {
 							const resultsHTML = results.map(item => \`
 								<div class="result">
 									<h3><a href="\${item.path}" target="_blank" rel="noopener noreferrer">\${item.title || new URL(item.path).href.replace("http://").replace("https://").replace("/")}</a></h3>
-									\${item.description ? \`<p>Title: \${item.description}</p>\` : ''}
+									\${item.description ? \`<p>\${item.description}</p>\` : ''}
 									<p>Scraped: \${new Date(item.visited_date).toLocaleDateString()}</p>
 								</div>
 								<hr>
