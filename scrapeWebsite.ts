@@ -6,8 +6,6 @@ import customFetch from "./utils/fetch";
 import { checkRobotsTxt } from "./utils/checkRobotsTxt"
 import { lemmatizeText } from "./utils/lemmatize";
 
-declare var self: Worker;
-
 export type Button = {
 	id?: number;
 	image: any;

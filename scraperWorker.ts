@@ -33,11 +33,11 @@ self.onmessage = async (event: MessageEvent) => {
 			await db.scrapedURL(url);
 		} catch (error: any) {
 			self.postMessage({ success: false, error: error.message });
-		    self.terminate();
             await db.scrapedURL(url);
+		    process.exit(1);
 		}
 	} catch (error: any) {
 		self.postMessage({ success: false, error: error.message });
-		self.terminate();
+		process.exit(1);
 	}
 };
