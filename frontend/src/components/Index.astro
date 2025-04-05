@@ -1,6 +1,17 @@
 ---
 import { slide } from 'astro:transitions';
 import Searchbar from '../components/Searchbar.astro';
+
+const stats = await fetch(
+		new URL(Astro.url.origin + '/api/stats').href,
+		{
+			method: 'GET',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+		}
+	).then((res) => res.json());
+
 ---
 
 <div class="center">
@@ -12,6 +23,7 @@ import Searchbar from '../components/Searchbar.astro';
 		pls pls plsss :3c
 	</p>
 	<Searchbar transition:animate=slide transition:name="searchbar" transition:persist/>
+	<p>Found <strong>{stats.totalButtons}</strong> 88x31 buttons across <strong>{stats.totalWebsites}</strong> websites!</p>
 </div>
 
 <style>

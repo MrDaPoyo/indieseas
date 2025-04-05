@@ -16,6 +16,17 @@ Bun.serve({
 					"Content-Type": "application/json",
 				},
 			});
+		},
+		"/stats": async (req) => {
+			const stats = {
+				totalButtons: (await db.retrieveAllButtons()).length,
+				totalWebsites: (await db.retrieveAllScrapedURLs()).length,
+			}
+			return new Response(JSON.stringify(stats), {
+				headers: {
+					"Content-Type": "application/json",
+				},
+			});
 		}
 	},
 	port: process.env.SEARCH_PORT || 8000,
