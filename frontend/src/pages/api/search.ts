@@ -15,7 +15,7 @@ export const GET: APIRoute = async (request) => {
 		}
 
 		const response = await fetch(
-			`http://localhost:8080/search?q=${encodeURIComponent(query)}`
+			`http://localhost:8000/search?q=${encodeURIComponent(query)}`
 		);
 		if (!response.ok) {
 			return new Response(
