@@ -232,7 +232,7 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 								totalButtonData = [...totalButtonData, ...extractedButtons];
 							}
 							const lemmatizedText = await lemmatizeText(buttonData.rawText);
-							db.scrapedURLPath(path, totalButtonData.length, buttonData.title, buttonData.description, await lemmatizedText);
+							await db.scrapedURLPath(path, totalButtonData.length, buttonData.title, buttonData.description, lemmatizedText);
 							await sleep(1000);
 							continue;
 						} else {
