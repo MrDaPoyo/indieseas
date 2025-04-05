@@ -1,0 +1,92 @@
+---
+import Searchbar from "./Searchbar.astro";
+import { slide } from "astro:transitions";
+
+const query = Astro.url.searchParams.get("q") || null;
+
+if (!query || query.trim() === "" || query == null) {
+    return Astro.redirect("/");
+}
+
+const targetUrl =
+	new URL(Astro.url.origin + "/api/search").href +
+	"?q=" +
+	encodeURIComponent(query);
+
+const response = await fetch(targetUrl, {
+	method: "GET",
+	headers: {
+		"Content-Type": "application/json",
+	},
+});
+
+if (!response.ok) {
+	throw new Error(
+		`Error fetching search results: ${response.statusText} (${response.status})`
+	);
+}
+
+const results = await response.json();
+---
+
+<>
+	<div class="header">
+		<a href="/" style="text-decoration: none; color: inherit;">
+            <h1 class="mega-title" style="font-size: 3rem; margin: 0;">IndieSeas</h1>
+        </a>
+        <span style="margin: 5px;"></span>
+        <Searchbar 
+            transition:animate={slide({duration: "0.4s"})} 
+            transition:name="searchbar" 
+            transition:persist
+            query={query}
+        />
+        <style>
+            .header {
+                display: flex;
+                flex-direction: row;
+                justify-content: start;
+                align-items: center;
+                width: 100%;
+                padding: 5px;
+            }
+        </style>
+	</div>
+	<hr style="margin-top: 0;"/>
+	<div id="results">
+        <style>
+            #results {
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: start;
+                padding: 5px;
+            }
+            .result {
+                display: flex;
+                flex-direction: column;
+                justify-content: start;
+                align-items: start;
+                padding: 5px;
+            }
+            .result * {
+                margin: 0;
+                padding: 0;
+            }
+        </style>
+        <p>Found {results.length} results for "{query}"</p>
+		{
+			results.map((result: any) => {
+				return (
+					<div class="result">
+						<a href={result.path} target="_blank">
+                            <h2>{result.title || result.path}</h2>
+						</a>
+                        <p>{result.description || "No description provided."}</p>
+                        <p style="font-size: 0.8rem; color: gray;">{result.path}</p>
+					</div>
+				);
+			})
+		}
+	</div>
+</>

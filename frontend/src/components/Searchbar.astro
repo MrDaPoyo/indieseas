@@ -1,0 +1,32 @@
+<form action="/search">
+	<input
+		type="text"
+		name="q"
+		id="search"
+		placeholder="Sail the seven webs! Arr! >:3"
+		value={Astro.props.query || ""}
+	/>
+	<button type="submit">Search</button>
+	<script>
+		const form = document.querySelector("form");
+		form?.addEventListener("submit", (e) => {
+			e.preventDefault();
+			const input = document.querySelector("#search") as HTMLInputElement;
+			if (input && input.value.trim() == "" || input.value == null) {
+				alert("Please enter a search term!");
+				return;
+			}
+			const url = new URL(window.location.href);
+			if (url.searchParams.has("q")) {
+				url.searchParams.delete("q");
+			}
+			url.pathname = "/search";
+			url.searchParams.append("q", encodeURIComponent(input.value.trim()));
+
+			if (input && input.value.trim() !== "") {
+				window.location.href =
+					url.href
+			}
+		});
+	</script>
+</form>

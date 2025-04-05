@@ -439,8 +439,6 @@ export async function search(query: string) {
 			.where(inArray(schema.visitedURLs.path, websiteUrls))
 			.execute();
 		
-		console.log("Website Results: ", websiteResults);
-
 		// Add scores to results and return in ranked order
 		const rankedResults = websiteUrls.map(url => {
 			const website = websiteResults.find(site => {

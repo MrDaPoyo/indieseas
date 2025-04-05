@@ -1,0 +1,110 @@
+---
+let title = "IndieSeas";
+if (Astro.props.title) {
+	title = `${title} - ${Astro.props.title}`;
+}
+import favicon from "../assets/favicon.svg";
+import { ClientRouter, slide } from 'astro:transitions';
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width" />
+		<link rel="icon" type="image/svg+xml" href={favicon.src} />
+		<meta name="generator" content={Astro.generator} />
+		<title>{title}</title>
+		<ClientRouter />
+	</head>
+	<body>
+		<slot />
+	</body>
+</html>
+
+<style is:global>
+	:root {
+		--background: #10101a;
+		--text: #fffffd;
+		--primary: #5788ff;
+		--secondary: #a5ffb1;
+	}
+
+	@font-face {
+		font-family: "Jua";
+		src: url("/fonts/jua.ttf") format("truetype");
+		font-weight: 400;
+		font-style: normal;
+	}
+
+	@font-face {
+		font-family: "Karla";
+		src: url("/fonts/karla.ttf") format("truetype");
+		font-weight: 400;
+		font-style: normal;
+	}
+
+	h1,
+	h2,
+	h3,
+	h4,
+	h5,
+	h6 {
+		font-family: "Jua";
+	}
+
+	html,
+	body {
+		margin: 0;
+		width: 100%;
+		height: 100%;
+		background-color: var(--background);
+		color: var(--text);
+		font-family: "Karla", sans-serif;
+		overflow-x: hidden;
+	}
+
+	a {
+		color: var(--primary);
+	}
+	.search-container,
+	.search-container form {
+		display: flex;
+		justify-content: space-around;
+		align-items: center;
+		flex-direction: row;
+	}
+
+	input[type="text"] {
+		margin-right: 0.25vw;
+		width: fit-content;
+		padding: 10px;
+		border: 5px solid var(--primary);
+		border-radius: 12.5px;
+		font-size: 16px;
+		color: var(--text);
+		background-color: var(--background);
+		transition: 0.3s ease;
+	}
+	input[type="text"]:focus {
+		outline: none;
+		border-color: var(--secondary);
+	}
+
+	button,
+	input[type="submit"] {
+		background-color: transparent;
+		padding: 10px 20px;
+		border: 5px solid var(--primary);
+		border-radius: 12.5px;
+		color: var(--text);
+		font-size: 16px;
+		cursor: pointer;
+		transition: 0.3s ease;
+		height: 100%;
+	}
+	button:hover,
+	input[type="submit"]:hover {
+		border-color: var(--secondary);
+	}
+</style>

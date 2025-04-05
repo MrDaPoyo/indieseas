@@ -1,2 +1,4 @@
 # indiesearch
-I gotta tell Thin and maxpixels.moe about this
+`PORT=8080 node ./dist/server/entry.mjs`
+Default api port: 8000
+Default frontend port: 8080
