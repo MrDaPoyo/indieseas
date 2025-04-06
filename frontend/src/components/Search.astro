@@ -78,7 +78,7 @@ console.log("Results: ", results);
         </style>
         <p>Found {results.results.rowCount} results for "{query}" in {time} seconds.</p>
 		{
-            results.results.map((result) => (
+            results.results.results.rows.map((result) => (
                 <div class="result">
                     <a href={result.website} target="_blank">
                         <h2>{result.title || result.website}</h2>
