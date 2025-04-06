@@ -7,11 +7,11 @@ echo "Starting required services..."
 docker compose up -d
 
 echo "Waiting for services to initialize..."
-sleep 1
+sleep 2
+docker exec -it indieseas-db psql -U root -d indieseas -c "CREATE EXTENSION vector;"
+sleep 2
 
 echo "Running Drizzle migration..."
 bun drizzle-kit push
-
-docker exec -it indieseas-db psql -U root -d indieseas -c "CREATE EXTENSION vector;"
 
 echo "Done!"

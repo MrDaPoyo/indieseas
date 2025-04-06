@@ -16,8 +16,8 @@ const bytea = customType<{ data: Buffer | string; default: false }>({
 })("image");
 
 const customVector = customType<{ data: any; notNull: true }>({
-    dataType(params: { dimensions: number }) {
-      return `vector(${params.dimensions})`;
+	dataType() {
+	  return `vector(512)`;
 	},
 });
 
@@ -56,7 +56,7 @@ export const websitesIndex = pgTable(
 	{
 		id: serial().primaryKey(),
 		website: text().notNull(),
-		embedding: customVector("embedding", { dimensions: 1536 }),
+		embedding: customVector("embedding"),
 	},
 	(table) => [
 		index("embeddingIndex").using(

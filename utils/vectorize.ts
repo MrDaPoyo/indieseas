@@ -1,11 +1,5 @@
 import { AutoModel, AutoTokenizer, Tensor } from "@huggingface/transformers";
 
-/**
- * Creates an embedding function for generating vector representations of text
- * @param {string} model_name - HuggingFace model identifier
- * @param {object} options - Configuration options
- * @returns {Promise<Function>} - Async function that generates embeddings
- */
 export async function createEmbedder(
 	model_name = "minishlab/potion-base-8M",
 	options = {
@@ -20,7 +14,9 @@ export async function createEmbedder(
 		model_type = "model2vec",
 		model_revision = "main",
 		tokenizer_revision = "main",
-		device = navigator?.gpu ? "webgpu" : undefined, // use webgpu if available
+		device = typeof navigator !== 'undefined' && navigator?.gpu 
+  ? "webgpu" 
+  : typeof process !== 'undefined' ? "cpu" : undefined,
 		dtype = "fp32",
 	} = options;
 
@@ -67,4 +63,31 @@ export async function createEmbedder(
 	};
 }
 
-export const embedder = await createEmbedder("minishlab/potion-base-32M", { device: "cpu" });
+const embedder = await createEmbedder("minishlab/potion-base-32M", {
+	device: "cpu" 
+});
+
+Bun.serve({
+	port: process.env.AI_API_PORT || 8888,
+	routes: {
+		"/": async () => {
+			return new Response("IndieSeas AI API. Yucky, I know, but it is what it is.")
+		},
+		"/vectorize": async (req) => {
+			if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+			const body = await req.json();
+			let { text } = body;
+			if (!text) return new Response("No texts provided", { status: 400 });
+			const embeddings = await embedder(text);
+			return new Response(JSON.stringify({vectors: embeddings}), {
+				headers: { "Content-Type": "application/json" },
+			});
+		},
+		"/test": async (req) => {
+			return new Response(JSON.stringify({vectors: await embedder(["Hello world", "This is a test"])}), {
+				headers: { "Content-Type": "application/json" },
+			});
+		},
+	}
+}
+)

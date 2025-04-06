@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, inArray, sql, and } from "drizzle-orm";
 import * as schema from "./schema";
-import { embedder } from "../utils/vectorize"
+import { createEmbedder } from "../utils/vectorize"
 
 export let db = drizzle(process.env.DB_URL! as string, { schema: schema });
 
@@ -155,9 +155,47 @@ export async function scrapedURLPath(url: string, amount_of_buttons: number = 0,
 			.set({ visited_date: new Date(), amount_of_buttons: amount_of_buttons, title: title, description: description })
 			.where(eq(schema.visitedURLs.path, url));
 
-		await db.insert(schema.websitesIndex).values({
-			vector: await embedder(text.join(' '))
+		const apiUrl = `${process.env.AI_API_URL!.replace(/\/$/, '')}:${process.env.AI_API_PORT}/vectorize`;
+		const response = await fetch(apiUrl, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ text: text })
 		});
+
+		if (!response.ok) throw new Error(`API request failed with status ${response.status}`);
+		const embeddings = await response.json();
+
+		if (!embeddings.vectors || !Array.isArray(embeddings.vectors)) {
+			throw new Error("API returned invalid embedding format");
+		}
+
+		console.log(`Received ${embeddings.vectors.length} embeddings, each with ${
+			embeddings.vectors[0]?.length || 0} dimensions`);
+
+		for (let embedding of embeddings.vectors) {
+			// convert the embedding array to a PostgreSQL vector string format such as [x1,x2,x3,...] cuz silly postgres wont make the cut
+			const vectorString = `[${embedding.join(',')}]`;
+			
+			// Check if the website already exists
+			const existingRecord = await db.execute(sql`
+				SELECT * FROM websites_index WHERE website = ${url}
+			`);
+			
+			if (existingRecord.rowCount as any > 0) {
+				// Update existing record
+				await db.execute(sql`
+					UPDATE websites_index 
+					SET embedding = ${vectorString}::vector
+					WHERE website = ${url}
+				`);
+			} else {
+				// Insert new record
+				await db.execute(sql`
+					INSERT INTO websites_index (website, embedding) 
+					VALUES (${url}, ${vectorString}::vector)
+				`);
+			}
+		}
 		
 		return true;
 	} catch (error) {

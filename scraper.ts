@@ -1,7 +1,4 @@
 import { sleep } from "bun";
-import * as scrapeWebsite from "./scrapeWebsite";
-import { checkRobotsTxt } from "./utils/checkRobotsTxt";
-import { lemmatizationList } from "./utils/lemmatize";
 
 import * as db from "./db/db";
 

@@ -1,7 +1,8 @@
 declare var self: Worker;
 import * as db from "./db/db";
 import * as scrapeWebsite from "./scrapeWebsite";
-import { lemmatizationList } from "./utils/lemmatize";
+
+console.log("Scraper worker started.");
 
 self.onmessage = async (event: MessageEvent) => {
 	let { url, website_id, maxPages } = event.data;
