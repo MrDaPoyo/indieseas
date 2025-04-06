@@ -2,6 +2,7 @@ import type { APIRoute } from "astro";
 
 export const GET: APIRoute = async (request) => {
 	try {
+		const timer = performance.now();
 		const query = request.url.searchParams.get("q") || null;
 		
 		if (!query || query.trim() === "") {
@@ -29,7 +30,7 @@ export const GET: APIRoute = async (request) => {
 
 		const result = await response.json();
 
-		return new Response(JSON.stringify(result), {
+		return new Response(JSON.stringify({results: result, time: performance.now() - timer}), {
 			status: 200,
 			headers: {
 				"Content-Type": "text/json",

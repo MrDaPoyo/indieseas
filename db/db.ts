@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, inArray, sql, and } from "drizzle-orm";
 import * as schema from "./schema";
-import { createEmbedder } from "../utils/vectorize"
+import { createEmbedder } from "../utils/vectorize";
 
 export let db = drizzle(process.env.DB_URL! as string, { schema: schema });
 
@@ -99,7 +99,8 @@ export async function scrapedURL(url: string) {
 		} else {
 			url = new URL("https://" + url).hostname;
 		}
-		await db.update(schema.scrapedURLs)
+		await db
+			.update(schema.scrapedURLs)
 			.set({ scraped: true, scraped_date: new Date() })
 			.where(eq(schema.scrapedURLs.url, url));
 		return true;
@@ -148,40 +149,59 @@ export async function addURLPathToScrape(url: string) {
 	}
 }
 
-export async function scrapedURLPath(url: string, amount_of_buttons: number = 0, title: string = "", description: string = "", text: string[]) {
+export async function scrapedURLPath(
+	url: string,
+	amount_of_buttons: number = 0,
+	title: string = "",
+	description: string = "",
+	text: string[]
+) {
 	try {
 		await db
 			.update(schema.visitedURLs)
-			.set({ visited_date: new Date(), amount_of_buttons: amount_of_buttons, title: title, description: description })
+			.set({
+				visited_date: new Date(),
+				amount_of_buttons: amount_of_buttons,
+				title: title,
+				description: description,
+			})
 			.where(eq(schema.visitedURLs.path, url));
 
-		const apiUrl = `${process.env.AI_API_URL!.replace(/\/$/, '')}:${process.env.AI_API_PORT}/vectorize`;
+		const apiUrl = `${process.env.AI_API_URL!.replace(/\/$/, "")}:${
+			process.env.AI_API_PORT
+		}/vectorize`;
 		const response = await fetch(apiUrl, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ text: text })
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ text: text }),
 		});
 
-		if (!response.ok) throw new Error(`API request failed with status ${response.status}`);
+		if (!response.ok)
+			throw new Error(
+				`API request failed with status ${response.status}`
+			);
 		const embeddings = await response.json();
 
 		if (!embeddings.vectors || !Array.isArray(embeddings.vectors)) {
 			throw new Error("API returned invalid embedding format");
 		}
 
-		console.log(`Received ${embeddings.vectors.length} embeddings, each with ${
-			embeddings.vectors[0]?.length || 0} dimensions`);
+		console.log(
+			`Received ${embeddings.vectors.length} embeddings, each with ${
+				embeddings.vectors[0]?.length || 0
+			} dimensions`
+		);
 
 		for (let embedding of embeddings.vectors) {
 			// convert the embedding array to a PostgreSQL vector string format such as [x1,x2,x3,...] cuz silly postgres wont make the cut
-			const vectorString = `[${embedding.join(',')}]`;
-			
+			const vectorString = `[${embedding.join(",")}]`;
+
 			// Check if the website already exists
 			const existingRecord = await db.execute(sql`
 				SELECT * FROM websites_index WHERE website = ${url}
 			`);
-			
-			if (existingRecord.rowCount as any > 0) {
+
+			if ((existingRecord.rowCount as any) > 0) {
 				// Update existing record
 				await db.execute(sql`
 					UPDATE websites_index 
@@ -196,7 +216,7 @@ export async function scrapedURLPath(url: string, amount_of_buttons: number = 0,
 				`);
 			}
 		}
-		
+
 		return true;
 	} catch (error) {
 		console.log("Error at scrapedURLPath: " + error);
@@ -206,7 +226,8 @@ export async function scrapedURLPath(url: string, amount_of_buttons: number = 0,
 
 export async function isURLPathScraped(url: string) {
 	try {
-		const existing = await db.select()
+		const existing = await db
+			.select()
 			.from(schema.visitedURLs)
 			.where(eq(schema.visitedURLs.path, url))
 			.execute();
@@ -279,89 +300,72 @@ export async function removeURLEntirely(url: string) {
 }
 
 export async function search(query: string) {
-	let keywords = [] as string[];
-	for (let char of query.split(" ")) {
-		if (char.includes("http://") || char.includes("https://") || char.includes(".")) {
-			if (char.startsWith("http://") || char.startsWith("https://")) {
-				char = new URL(char).hostname;
-			} else {
-				char = new URL("https://" + char).hostname;
-			}
-			keywords.push(char.toLowerCase().trim());
-		}
-		if (!keywords.includes(char))
-			keywords.push(lemmatizeWord(char.toLowerCase().trim().replace(/[^a-zA-Z0-9]/g, "")));
-	}
-	if (keywords.length === 0) {
-		return [];
-	}
-	console.log("Keywords: ", keywords);
 	try {
-		// Handle direct website searches first
-		const websiteKeywords = keywords.filter(k => k.includes('.'));
-		if (websiteKeywords.length > 0) {
-			const websiteResults = await db
-				.select()
-				.from(schema.scrapedURLs)
-				.where(inArray(schema.scrapedURLs.url, websiteKeywords))
-				.execute();
+		// Convert the query to an embedding vector
+		const apiUrl = `${process.env.AI_API_URL!.replace(/\/$/, "")}:${
+			process.env.AI_API_PORT
+		}/vectorize`;
+		const response = await fetch(apiUrl, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ text: [query] }),
+		});
 
-			if (websiteResults.length > 0) {
-				return websiteResults;
+		if (!response.ok)
+			throw new Error(
+				`API request failed with status ${response.status}`
+			);
+		
+		const timer = performance.now();
+
+		const embedding = await response.json();
+
+		if (
+			!embedding.vectors ||
+			!Array.isArray(embedding.vectors) ||
+			embedding.vectors.length === 0
+		) {
+			throw new Error("API returned invalid embedding format");
+		}
+
+		// Convert the embedding array to a PostgreSQL vector string format
+		const vectorString = `[${embedding.vectors[0].join(",")}]`;
+
+		// Perform vector similarity search
+		const results = await db.execute(sql`
+			SELECT website, 1 - (embedding <=> ${vectorString}::vector) as similarity 
+			FROM websites_index 
+			WHERE website IS NOT NULL
+			ORDER BY embedding <=> ${vectorString}::vector
+			LIMIT 10
+		`);
+		if (!results.rows[0] || results.rows.length === 0) {
+			return [];
+		}
+
+		for (let i = 0; i < results.rows.length; i++) {
+			const websitePath = results.rows[i].website as string;
+			if (websitePath) {
+				const websiteInfo = await db.query.visitedURLs.findFirst({
+					where: eq(schema.visitedURLs.path, websitePath),
+				});
+
+				if (websiteInfo) {
+					results.rows[i] = {
+						...results.rows[i],
+						title: websiteInfo.title,
+						description: websiteInfo.description,
+						amount_of_buttons: websiteInfo.amount_of_buttons,
+					};
+				}
 			}
 		}
-		
-		// Search by tf-idf for all keywords
-		const keywordsForSearch = keywords.filter(k => k.trim() !== '');
-		if (keywordsForSearch.length === 0) return [];
-		
-		// Get websites with matching keywords and their tf-idf scores
-		const indexResults = await db
-			.select({
-				website: schema.websitesIndex.website,
-				tf_idf: schema.websitesIndex.tf_idf
-			})
-			.from(schema.websitesIndex)
-			.where(inArray(schema.websitesIndex.keyword, keywordsForSearch))
-			.execute();
-		
-		if (indexResults.length === 0) return [];
-		
-		// Aggregate tf-idf scores by website
-		const websiteScores = new Map<string, number>();
-		for (const result of indexResults) {
-			const currentScore = websiteScores.get(result.website) || 0;
-			websiteScores.set(result.website, currentScore + result.tf_idf);
-		}
-		
-		// Convert to array for sorting
-		const rankedWebsites = Array.from(websiteScores.entries())
-			.map(([website, score]) => ({ website, score }))
-			.sort((a, b) => b.score - a.score); // Sort by score descending
-		
-		// Get full website data for top results
-		const websiteUrls = rankedWebsites.map(item => item.website);
-		const websiteResults = await db
-			.select()
-			.from(schema.visitedURLs)
-			.where(inArray(schema.visitedURLs.path, websiteUrls))
-			.execute();
-		
-		// Add scores to results and return in ranked order
-		const rankedResults = websiteUrls.map(url => {
-			const website = websiteResults.find(site => {
-				// Normalize URLs for comparison
-				const sitePath = site.path ? new URL(site.path.startsWith('http') ? site.path : `https://${site.path}`).href : '';
-				const normalizedUrl = url ? new URL(url.startsWith('http') ? url : `https://${url}`).href : '';
-				return sitePath === normalizedUrl;
-			});
-			const score = websiteScores.get(url) || 0;
-			return { ...website, tf_idf_score: score };
-		}).filter(result => result.path !== undefined);
-		
-		return rankedResults;
+
+		console.log("Search results:", results.rows);
+
+		return { results, metadata: { time: performance.now() - timer } };
 	} catch (error) {
-		console.error("Error at search:", error);
+		console.error("Error in vector search:", error);
 		return [];
 	}
 }
