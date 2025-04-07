@@ -4,7 +4,9 @@
 		name="q"
 		id="search"
 		placeholder="Sail the seven webs! Arr! >:3"
-		value={Astro.props.query || ""}
+		value={decodeURIComponent(Astro.props.query) ? decodeURIComponent(Astro.props.query) : ""}
+		
+		autocomplete="off"
 	/>
 	<button type="submit">Search</button>
 	<script>

@@ -2,7 +2,7 @@
 import Searchbar from "./Searchbar.astro";
 import { slide } from "astro:transitions";
 
-const query = Astro.url.searchParams.get("q") || null;
+const query = decodeURIComponent(Astro.url.searchParams.get("q")) ? decodeURIComponent(Astro.url.searchParams.get("q")) : "" || null;
 
 if (!query || query.trim() === "" || query == null) {
     return Astro.redirect("/");
