@@ -28,6 +28,8 @@ if (!response.ok) {
 
 const results = await response.json();
 const time = results.time;
+let thereAreResults = true;
+if (!results.results) thereAreResults = false;
 console.log("Results: ", results);
 ---
 
@@ -76,18 +78,26 @@ console.log("Results: ", results);
                 padding: 0;
             }
         </style>
-        <p>Found {results.results.rowCount} results for "{query}" in {time} seconds.</p>
-		{
-            results.results.results.rows.map((result) => (
-                <div class="result">
-                    <a href={result.website} target="_blank">
-                        <h2>{result.title || result.website}</h2>
-                    </a>
-                    <p>{result.description || "No description provided."}</p>
-                    <p style="font-size: 0.8rem; color: gray;">{result.website}</p>
-                    <p style="font-size: 0.8rem; color: gray;">Similarity: {result.similarity?.toFixed(4) || "N/A"}</p>
-                </div>
-            ))
-		}
+        {thereAreResults ? (
+            <>
+                <p>Found {results.results.rowCount || 0} results for "{query}" in {time.toFixed(4)} miliseconds.</p>
+                {
+                    results.results.results.rows
+                        .filter((result => result.similarity > 0.057))
+                        .map((result) => (
+                            <div class="result">
+                                <a href={result.website} target="_blank">
+                                    <h2>{result.title || result.website}</h2>
+                                </a>
+                                <p>{result.description || "No description provided."}</p>
+                                <p style="font-size: 0.8rem; color: gray;">{result.website}</p>
+                                <p style="font-size: 0.8rem; color: gray;">Similarity: {result.similarity?.toFixed(4) || "N/A"}</p>
+                            </div>
+                        ))
+                }
+            </>
+        ) : (
+            <p>No results found for "{query}" in {time} seconds.</p>
+        )}
 	</div>
 </>

@@ -115,7 +115,6 @@ async function scrapeURL(url: string, url_id: number) {
 	}
 
 	try {
-		// Create a worker for scraping
 		const worker = new Worker("./scraperWorker.ts", {
 			type: "module",
 		});
@@ -128,8 +127,10 @@ async function scrapeURL(url: string, url_id: number) {
 			worker.onmessage = async (event) => {
 				if (event.data.success) {
 					console.log(`Successfully scraped ${url}`);
+					await db.scrapedURL(originalUrl);
 				} else if (!event.data.success) {
 					console.error(`Error scraping ${url}:`, event.data.error);
+					await db.scrapedURL(originalUrl);
 				}
 				resolve();
 			};

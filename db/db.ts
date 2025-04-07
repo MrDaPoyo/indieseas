@@ -336,8 +336,7 @@ export async function search(query: string) {
 			SELECT website, 1 - (embedding <=> ${vectorString}::vector) as similarity 
 			FROM websites_index 
 			WHERE website IS NOT NULL
-			ORDER BY embedding <=> ${vectorString}::vector
-			LIMIT 10
+			ORDER BY 1 - (embedding <=> ${vectorString}) DESC LIMIT 50;
 		`);
 		if (!results.rows[0] || results.rows.length === 0) {
 			return [];
@@ -360,8 +359,6 @@ export async function search(query: string) {
 				}
 			}
 		}
-
-		console.log("Search results:", results.rows);
 
 		return { results, metadata: { time: performance.now() - timer } };
 	} catch (error) {
