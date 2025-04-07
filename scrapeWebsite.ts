@@ -187,6 +187,49 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 
 				console.log(`Scraping (${++pagesScraped}/${maxPages}):`, path);
 				try {
+					// fetch page content to find new links
+					const pageResponse = await customFetch(path);
+					if (pageResponse.ok) {
+						const pageHtml = await pageResponse.text();
+						const page$ = cheerio.load(pageHtml);
+						const pageLinks = page$("a").toArray();
+						
+						if (pagesScraped + toVisit.size < maxPages) {
+							for (const link of pageLinks) {
+								const href = page$(link).attr('href');
+								if (!href) continue;
+								
+								try {
+									let normalizedHref: string;
+									
+									if (href.startsWith('/')) {
+										normalizedHref = href;
+									} else if (href.startsWith('#')) {
+										continue;
+									} else if (href.startsWith('http://') || href.startsWith('https://')) {
+										const linkUrl = new URL(href);
+										if (linkUrl.origin !== baseUrl) continue;
+										normalizedHref = linkUrl.pathname + linkUrl.search + linkUrl.hash;
+									} else if (!href.startsWith('mailto:') && !href.startsWith('tel:')) {
+										normalizedHref = '/' + href;
+									} else {
+										continue;
+									}
+									
+									if (!visited.has(normalizedHref) && !toVisit.has(normalizedHref)) {
+										// Check if already scraped in database
+										const alreadyScraped = await db.isURLScraped(normalizedHref);
+										if (!alreadyScraped) {
+											toVisit.add(normalizedHref);
+										}
+									}
+								} catch (error) {
+									console.log("Invalid URL while discovering new links:", href);
+								}
+							}
+						}
+					}
+					
 					const buttons = await fetch(`${process.env.WORKER_URL}?path=${path}&key=${process.env.WORKER_KEY}`, {
 						method: "GET",
 					});
