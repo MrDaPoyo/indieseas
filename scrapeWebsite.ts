@@ -25,8 +25,31 @@ function getImageSize(buffer: Buffer): { width: number; height: number } {
 	return { width: metadata.width || 0, height: metadata.height || 0 };
 }
 
-function fetchButton(url: string): Promise<Response> {
-	return customFetch(url);
+async function fetchButton(url: string): Promise<Response> {
+	try {
+		const regularFetchResponse = await customFetch(url);
+		if (regularFetchResponse.ok) {
+			return regularFetchResponse;
+		}
+		
+		const puppeteer = await import('puppeteer');
+		const browser = await puppeteer.launch({ headless: true });
+		const page = await browser.newPage();
+		
+		await page.goto(url, { waitUntil: 'networkidle0', timeout: 10000 });
+		const imageBuffer = await page.screenshot({ type: 'png' });
+		await browser.close();
+		
+		return new Response(imageBuffer, {
+			status: 200,
+			headers: {
+				'Content-Type': 'image/png',
+			}
+		});
+	} catch (error) {
+		console.error(`Error fetching button with puppeteer: ${error}`);
+		return new Response(null, { status: 404 });
+	}
 }
 
 console.log("Scraping entire website...");
