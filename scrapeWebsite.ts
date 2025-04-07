@@ -4,7 +4,6 @@ import { sleep } from "bun";
 import * as cheerio from "cheerio";
 import customFetch from "./utils/fetch";
 import { checkRobotsTxt } from "./utils/checkRobotsTxt"
-import { lemmatizeText } from "./utils/lemmatize";
 
 export type Button = {
 	id?: number;
@@ -231,8 +230,7 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 							if (extractedButtons.length > 0) {
 								totalButtonData = [...totalButtonData, ...extractedButtons];
 							}
-							const lemmatizedText = await lemmatizeText(buttonData.rawText);
-							await db.scrapedURLPath(path, totalButtonData.length, buttonData.title, buttonData.description, lemmatizedText);
+							await db.scrapedURLPath(path, totalButtonData.length, buttonData.title, buttonData.description, buttonData.rawText);
 							await sleep(1000);
 							continue;
 						} else {

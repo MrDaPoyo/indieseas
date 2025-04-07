@@ -80,10 +80,9 @@ console.log("Results: ", results);
         </style>
         {thereAreResults ? (
             <>
-                <p>Found {results.results.rowCount || 0} results for "{query}" in {time.toFixed(4)} miliseconds.</p>
+                <p>Found {results.results.results.rowCount || 0} results for "{query}" in {time.toFixed(4)} miliseconds.</p>
                 {
                     results.results.results.rows
-                        .filter((result => result.similarity > 0.057))
                         .map((result) => (
                             <div class="result">
                                 <a href={result.website} target="_blank">

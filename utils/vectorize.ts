@@ -3,20 +3,20 @@ import { AutoModel, AutoTokenizer, Tensor } from "@huggingface/transformers";
 export async function createEmbedder(
 	model_name = "minishlab/potion-base-8M",
 	options = {
-        model_type: "model2vec",
-        model_revision: "main",
-        tokenizer_revision: "main",
-        device: navigator?.gpu ? "webgpu" : undefined, // use webgpu if available
-        dtype: "fp32",
-    }
+		model_type: "model2vec",
+		model_revision: "main",
+		tokenizer_revision: "main",
+		device: navigator?.gpu ? "webgpu" : undefined, // use webgpu if available
+		dtype: "fp32",
+	}
 ) {
 	const {
 		model_type = "model2vec",
 		model_revision = "main",
 		tokenizer_revision = "main",
-		device = typeof navigator !== 'undefined' && navigator?.gpu 
-  ? "webgpu" 
-  : typeof process !== 'undefined' ? "cpu" : undefined,
+		device = typeof navigator !== 'undefined' && navigator?.gpu
+			? "webgpu"
+			: typeof process !== 'undefined' ? "cpu" : undefined,
 		dtype = "fp32",
 	} = options;
 
@@ -64,7 +64,7 @@ export async function createEmbedder(
 }
 
 const embedder = await createEmbedder("minishlab/potion-base-32M", {
-	device: "cpu" 
+	device: "cpu"
 });
 
 Bun.serve({
@@ -78,13 +78,15 @@ Bun.serve({
 			const body = await req.json();
 			let { text } = body;
 			if (!text) return new Response("No texts provided", { status: 400 });
-			const embeddings = await embedder(text);
-			return new Response(JSON.stringify({vectors: embeddings}), {
+			// Ensure text is always an array
+			const textArray = Array.isArray(text) ? text : [text];
+			const embeddings = await embedder(textArray);
+			return new Response(JSON.stringify({ vectors: embeddings }), {
 				headers: { "Content-Type": "application/json" },
 			});
 		},
 		"/test": async (req) => {
-			return new Response(JSON.stringify({vectors: await embedder(["Hello world", "This is a test"])}), {
+			return new Response(JSON.stringify({ vectors: await embedder(["Hello world", "This is a test"]) }), {
 				headers: { "Content-Type": "application/json" },
 			});
 		},

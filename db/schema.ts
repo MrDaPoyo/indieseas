@@ -57,6 +57,7 @@ export const websitesIndex = pgTable(
 		id: serial().primaryKey(),
 		website: text().notNull(),
 		embedding: customVector("embedding"),
+		type: text().notNull(),
 	},
 	(table) => [
 		index("embeddingIndex").using(

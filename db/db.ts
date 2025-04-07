@@ -167,13 +167,43 @@ export async function scrapedURLPath(
 			})
 			.where(eq(schema.visitedURLs.path, url));
 
-		const apiUrl = `${process.env.AI_API_URL!.replace(/\/$/, "")}:${
-			process.env.AI_API_PORT
-		}/vectorize`;
+		const apiUrl = `${process.env.AI_API_URL!.replace(/\/$/, "")}:${process.env.AI_API_PORT
+			}/vectorize`;
+
+		if (title) {
+			const vectorizedTitle = await fetch(apiUrl, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ text: [title] })
+			})
+			if (vectorizedTitle.ok) {
+				const titleEmbeddings = await vectorizedTitle.json();
+				const titleVectorString = `[${titleEmbeddings.vectors[0].join(",")}]`;
+				await db.execute(sql`
+					INSERT INTO websites_index (website, embedding, type) 
+					VALUES (${url}, ${titleVectorString}::vector, 'title')
+				`);
+			}
+		}
+		if (description) {
+			const vectorizedDescription = await fetch(apiUrl, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ text: [description] })
+			})
+			const descriptionEmbeddings = await vectorizedDescription.json();
+			const descVectorString = `[${descriptionEmbeddings.vectors[0].join(",")}]`;
+			await db.execute(sql`
+					INSERT INTO websites_index (website, embedding, type) 
+					VALUES (${url}, ${descVectorString}::vector, 'description')
+				`);
+		}
+
+
 		const response = await fetch(apiUrl, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ text: text }),
+			body: JSON.stringify({ text: [text] }),
 		});
 
 		if (!response.ok)
@@ -187,8 +217,7 @@ export async function scrapedURLPath(
 		}
 
 		console.log(
-			`Received ${embeddings.vectors.length} embeddings, each with ${
-				embeddings.vectors[0]?.length || 0
+			`Received ${embeddings.vectors.length} embeddings, each with ${embeddings.vectors[0]?.length || 0
 			} dimensions`
 		);
 
@@ -196,25 +225,10 @@ export async function scrapedURLPath(
 			// convert the embedding array to a PostgreSQL vector string format such as [x1,x2,x3,...] cuz silly postgres wont make the cut
 			const vectorString = `[${embedding.join(",")}]`;
 
-			// Check if the website already exists
-			const existingRecord = await db.execute(sql`
-				SELECT * FROM websites_index WHERE website = ${url}
-			`);
-
-			if ((existingRecord.rowCount as any) > 0) {
-				// Update existing record
-				await db.execute(sql`
-					UPDATE websites_index 
-					SET embedding = ${vectorString}::vector
-					WHERE website = ${url}
+			await db.execute(sql`
+					INSERT INTO websites_index (website, embedding, type) 
+					VALUES (${url}, ${vectorString}::vector, 'corpus')
 				`);
-			} else {
-				// Insert new record
-				await db.execute(sql`
-					INSERT INTO websites_index (website, embedding) 
-					VALUES (${url}, ${vectorString}::vector)
-				`);
-			}
 		}
 
 		return true;
@@ -302,9 +316,8 @@ export async function removeURLEntirely(url: string) {
 export async function search(query: string) {
 	try {
 		// Convert the query to an embedding vector
-		const apiUrl = `${process.env.AI_API_URL!.replace(/\/$/, "")}:${
-			process.env.AI_API_PORT
-		}/vectorize`;
+		const apiUrl = `${process.env.AI_API_URL!.replace(/\/$/, "")}:${process.env.AI_API_PORT
+			}/vectorize`;
 		const response = await fetch(apiUrl, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
@@ -315,7 +328,7 @@ export async function search(query: string) {
 			throw new Error(
 				`API request failed with status ${response.status}`
 			);
-		
+
 		const timer = performance.now();
 
 		const embedding = await response.json();
@@ -331,13 +344,32 @@ export async function search(query: string) {
 		// Convert the embedding array to a PostgreSQL vector string format
 		const vectorString = `[${embedding.vectors[0].join(",")}]`;
 
-		// Perform vector similarity search
+		// Perform vector similarity search with different weights for each type
 		const results = await db.execute(sql`
-			SELECT website, 1 - (embedding <=> ${vectorString}::vector) as similarity 
-			FROM websites_index 
-			WHERE website IS NOT NULL
-			ORDER BY 1 - (embedding <=> ${vectorString}) DESC LIMIT 50;
+			WITH similarity_scores AS (
+				SELECT 
+					website, 
+					type,
+					1 - (embedding <=> ${vectorString}::vector) as similarity
+				FROM websites_index 
+				WHERE website IS NOT NULL
+			),
+			aggregated_scores AS (
+				SELECT 
+					website,
+					SUM(CASE WHEN type = 'title' THEN similarity * 1.5 
+							WHEN type = 'description' THEN similarity * 1.25
+							WHEN type = 'corpus' THEN similarity * 1.0
+							ELSE similarity END) as total_similarity,
+					COUNT(DISTINCT type) as matched_types
+				FROM similarity_scores
+				GROUP BY website
+			)
+			SELECT * FROM aggregated_scores
+			ORDER BY total_similarity DESC 
+			LIMIT 50;
 		`);
+
 		if (!results.rows[0] || results.rows.length === 0) {
 			return [];
 		}
@@ -355,6 +387,7 @@ export async function search(query: string) {
 						title: websiteInfo.title,
 						description: websiteInfo.description,
 						amount_of_buttons: websiteInfo.amount_of_buttons,
+						similarity: results.rows[i].total_similarity,
 					};
 				}
 			}
