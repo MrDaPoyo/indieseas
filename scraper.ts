@@ -59,8 +59,10 @@ if (process.argv[2] === "--nekoweb") {
 	}
 	if (await db.isURLScraped(urlToCheck)) {
 		console.log(`URL ${urlToCheck} has already been scraped.`);
+	} else if ((await db.retrieveURLsToScrape()).includes(urlToCheck)) {
+		console.log(`URL ${urlToCheck} is on the queue.`);
 	} else {
-		console.log(`URL ${urlToCheck} has not been scraped yet.`);
+		console.log(`URL ${urlToCheck} has not been scraped nor is in the queue.`);
 	}
 	process.exit(0);
 }
