@@ -29,6 +29,8 @@ function fetchButton(url: string): Promise<Response> {
 	return customFetch(url);
 }
 
+console.log("Scraping entire website...");
+
 export async function scrapeEntireWebsite(url: string, website_id: number, maxPages: number = 50): Promise<Button[]> {
 	return new Promise(async (resolve, reject) => {
 		try {
@@ -245,21 +247,41 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 						continue;
 					}
 					if (!Array.isArray(buttonData)) {
-						if (buttonData) {
-							const extractedButtons = Object.values(buttonData.buttons).map((btn: any) => {
-								return {
-									image: btn.buffer ? Buffer.from(Object.values(btn.buffer)) : Buffer.alloc(0),
-									filename: btn.src.split('/').pop() || '',
-									scraped_date: new Date(),
-									found_url: path,
-									hash: btn.buffer ? db.hash(Buffer.from(Object.values(btn.buffer))) : '',
-									src: btn.src,
-									links_to: btn.links_to,
-									height: btn.size.height,
-									width: btn.size.width,
-									alt: btn.alt,
-								};
-							});
+						console.log("Received buttonData:", typeof buttonData);
+						try {
+							if (typeof buttonData === 'string') {
+								buttonData = JSON.parse(buttonData);
+							}
+							
+							const extractedButtons: Button[] = [];
+							
+							for (const [url, btn] of Object.entries(buttonData.buttons)) {
+								try {
+									const buttonResponse = await fetchButton(url);
+									if (!buttonResponse.ok) {
+										console.error(`Failed to fetch button: ${url} - ${buttonResponse.status}`);
+										continue;
+									}
+									
+									const buffer = Buffer.from(await buttonResponse.arrayBuffer());
+									const { width, height } = getImageSize(buffer);
+									
+									extractedButtons.push({
+										image: buffer,
+										filename: url.split('/').pop() || '',
+										scraped_date: new Date(),
+										found_url: path,
+										hash: db.hash(buffer),
+										src: url,
+										links_to: (btn as any).links_to,
+										height: height,
+										width: width,
+										alt: (btn as any).alt || null,
+									});
+								} catch (error) {
+									console.error(`Error processing button ${url}:`, error);
+								}
+							}
 
 							extractedButtons.forEach((button: Button) => {
 								if (button.width !== 88 || button.height !== 31) {
@@ -276,9 +298,8 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 							await db.scrapedURLPath(path, totalButtonData.length, buttonData.title, buttonData.description, buttonData.rawText);
 							await sleep(1000);
 							continue;
-						} else {
-							console.error("Unexpected button data format:", buttonData.toString());
-							continue;
+						} catch (error) {
+							console.error("Error processing button data:", error);
 						}
 					}
 				} catch (error) {
