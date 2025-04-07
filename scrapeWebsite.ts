@@ -247,7 +247,6 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 						continue;
 					}
 					if (!Array.isArray(buttonData)) {
-						console.log("Received buttonData:", typeof buttonData);
 						try {
 							if (typeof buttonData === 'string') {
 								buttonData = JSON.parse(buttonData);
