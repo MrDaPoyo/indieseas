@@ -30,7 +30,7 @@ export const GET: APIRoute = async (request) => {
 
 		const result = await response.json();
 
-		return new Response(JSON.stringify({results: result, time: performance.now() - timer}), {
+		return new Response(JSON.stringify({results: result.results, time: performance.now() - timer}), {
 			status: 200,
 			headers: {
 				"Content-Type": "text/json",
