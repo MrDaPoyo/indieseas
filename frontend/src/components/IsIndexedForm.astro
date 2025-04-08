@@ -31,8 +31,7 @@ const baseUrl = Astro.url.origin
 
                 const urlValue = urlInput.value.trim();
                 if (urlValue) {
-                    const targetUrl = new URL(`/check?url=${encodeURIComponent(urlValue)}`, document.getElementById("baseUrl").textContent);
-                    window.location.href = targetUrl.href; // Redirect to the target URL
+                    window.location.href = `/check?url=${encodeURIComponent(urlValue)}`;
                 }
             });
         });
