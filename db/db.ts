@@ -393,7 +393,19 @@ export async function search(query: string) {
 			}
 		}
 
-		return { results, metadata: { time: performance.now() - timer } };
+		const filteredResults = results.rows.filter(row => 
+			row.total_similarity !== null && 
+			row.total_similarity !== undefined
+		);
+
+		return { 
+			results: filteredResults, 
+			metadata: { 
+				time: performance.now() - timer,
+				originalCount: results.rows.length,
+				filteredCount: filteredResults.length
+			} 
+		};
 	} catch (error) {
 		console.error("Error in vector search:", error);
 		return [];
