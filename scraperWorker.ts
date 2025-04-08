@@ -31,6 +31,10 @@ self.onmessage = async (event: MessageEvent) => {
 				maxPages
 			);
 			await db.scrapedURL(url);
+			self.postMessage({
+				success: true,
+				message: `Scraped ${url} successfully.`,
+			});
 		} catch (error: any) {
 			self.postMessage({ success: false, error: error.message });
             await db.scrapedURL(url);
