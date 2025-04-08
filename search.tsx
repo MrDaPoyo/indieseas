@@ -29,8 +29,25 @@ Bun.serve({
 			});
 		},
 		"/randomWebsite": async (req) => {
-			const randomWebsite = await db.getRandomWebsite();
+			const randomWebsite = await db.retrieveRandomWebsite();
+			if (!randomWebsite) {
+				return new Response("No random website found", { status: 404 });
+			}
+			
 			return new Response(JSON.stringify(randomWebsite), {
+				headers: {
+					"Content-Type": "application/json",
+				},
+			});
+		},
+		"/checkIfIndexed": async (req) => {
+			const url = new URL(req.url);
+			const hostname = url.searchParams.get("url");
+			if (!hostname) {
+				return new Response("No URL provided", { status: 400 });
+			}
+			const isIndexed = await db.isURLScraped(hostname);
+			return new Response(JSON.stringify({ isIndexed }), {
 				headers: {
 					"Content-Type": "application/json",
 				},

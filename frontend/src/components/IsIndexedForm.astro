@@ -1,0 +1,40 @@
+---
+const baseUrl = Astro.url.origin
+---
+
+<form>
+    <div>
+        <span id="baseUrl" style="display:none;">{baseUrl}</span>
+        <h2>Have we scraped u?</h2>
+        
+        <div>
+            <label for="url">Website URL (no https)</label>
+            <input type="text" maxlength="50" id="url" name="url" placeholder="example.com" required>
+        </div>
+        
+        <button type="submit">
+            Let's check!
+        </button>
+    </div>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const urlInput = document.getElementById("url");
+            const form = document.querySelector("form");
+
+            if (!form || !urlInput) {
+                console.error("Form or URL input not found.");
+                return;
+            }
+
+            form.addEventListener("submit", function(event) {
+                event.preventDefault();
+
+                const urlValue = urlInput.value.trim();
+                if (urlValue) {
+                    const targetUrl = new URL(`/check?url=${encodeURIComponent(urlValue)}`, document.getElementById("baseUrl").textContent);
+                    window.location.href = targetUrl.href; // Redirect to the target URL
+                }
+            });
+        });
+    </script>
+</form>

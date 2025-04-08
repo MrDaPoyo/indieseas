@@ -1,0 +1,42 @@
+---
+const queryParam = Astro.url.searchParams.get("url");
+let query = queryParam ? decodeURIComponent(queryParam) : "";
+let isIndexed = false;
+
+if (!query.startsWith("https://")) {
+    query = "https://" + query;
+} else if (!query.startsWith("http://")) {
+    query = "http://" + query;
+} else if (!query.startsWith("http://") && !query.startsWith("https://")) {
+    query = "https://" + query;
+}
+
+try {
+	const queryUrl = new URL(query).hostname;
+	const targetUrl =
+		new URL(Astro.url.origin + "/api/isIndexed").href +
+		`?url=${encodeURIComponent(queryUrl)}`;
+
+	const response = await fetch(targetUrl, {
+		method: "GET",
+		headers: {
+			"Content-Type": "application/json",
+		},
+	});
+
+	if (!response.ok) {
+		throw new Error(
+			`Error fetching search results: ${response.statusText} (${response.status})`
+		);
+	}
+
+	isIndexed = (await response.json()).isIndexed as boolean;
+    console.log(`isIndexed: ${isIndexed}`);
+} catch (e) {
+    console.error(e)
+	isIndexed = false;
+}
+---
+
+<a href="/">Back</a>
+<h2 class="website-title">{query} has {isIndexed ? "" : "NOT"} been indexed.</h2>

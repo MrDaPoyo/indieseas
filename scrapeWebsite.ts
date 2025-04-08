@@ -38,7 +38,12 @@ async function fetchButton(url: string): Promise<Response> {
 		
 		await page.goto(url, { waitUntil: 'networkidle0', timeout: 10000 });
 		const imageBuffer = await page.screenshot({ type: 'png' });
-		await browser.close();
+		try {
+			await browser.close();
+		} catch (error) {
+			console.error('Error closing browser:', error);
+			await browser.close();
+		}
 		
 		return new Response(imageBuffer, {
 			status: 200,

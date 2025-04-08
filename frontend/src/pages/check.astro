@@ -1,0 +1,19 @@
+---
+import IndexedComponent from '../components/IsIndexed.astro';
+import Layout from '../layouts/Layout.astro';
+
+const query = Astro.url.searchParams.get("url") || null;
+
+if (!query || query.trim() === "" || query == null) {
+    return Astro.redirect("/check-form", 302, {
+		headers: {
+			"Content-Type": "text/html",
+		},
+	});
+}
+---
+
+<Layout>
+	<IndexedComponent />
+</Layout>
+

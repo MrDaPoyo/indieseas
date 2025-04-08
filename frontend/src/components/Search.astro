@@ -31,7 +31,7 @@ const results = await response.json();
 const time = results.time;
 let thereAreResults = true;
 if (!results.results) thereAreResults = false;
-console.log("Results: ", results);
+const resultList = results.results;
 ---
 
 <>
@@ -83,7 +83,7 @@ console.log("Results: ", results);
             <>
                 <p>Found {results.results.rowCount || 0} results for "{query}" in {time.toFixed(4)} miliseconds.</p>
                 {
-                    results.results.rows
+                    resultList
                         .map((result: { website: string, title?: string, description?: string, total_similarity: number}) => (
                             <div class="result">
                                 <a href={result.website} target="_blank">

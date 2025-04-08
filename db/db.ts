@@ -313,6 +313,33 @@ export async function removeURLEntirely(url: string) {
 	}
 }
 
+export async function retrieveRandomWebsite() {
+	try {
+		const randomWebsite = await db.query.scrapedURLs.findFirst({
+			where: eq(schema.scrapedURLs.scraped, true),
+			orderBy: sql`random()`,
+		});
+
+		if (!randomWebsite) {
+			return false; // not enough websites
+		}
+
+		const url = randomWebsite.url;
+		const websiteButtons = await db.query.buttons.findMany({
+			limit: 25,
+			where: (buttons) => 
+				sql`${buttons.found_url} LIKE ${'%' + url + '%'} OR ${buttons.links_to} LIKE ${'%' + url + '%'}`
+		});
+
+		if (websiteButtons && websiteButtons.length > 0) {
+			randomWebsite.buttons = websiteButtons;
+		}
+		return { website: randomWebsite };
+	} catch (error) {
+		return false;
+	}
+}
+
 export async function search(query: string) {
 	try {
 		// Convert the query to an embedding vector
@@ -395,7 +422,9 @@ export async function search(query: string) {
 
 		const filteredResults = results.rows.filter(row => 
 			row.total_similarity !== null && 
-			row.total_similarity !== undefined
+			row.total_similarity !== undefined ||
+			row.title !== null &&
+			row.title !== undefined
 		);
 
 		return { 
