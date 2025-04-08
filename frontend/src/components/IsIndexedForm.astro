@@ -31,10 +31,7 @@ const baseUrl = Astro.url.origin
 
                 const urlValue = urlInput.value.trim();
                 if (urlValue) {
-                    const meta = document.createElement("meta");
-                    meta.setAttribute("http-equiv", "refresh");
-                    meta.setAttribute("content", "0;url=/check?url=" + encodeURIComponent(urlValue));
-                    document.body.appendChild(meta);
+                    window.location.href = "/check?url=" + encodeURIComponent(urlValue);
                 }
             });
         });
