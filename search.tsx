@@ -27,6 +27,14 @@ Bun.serve({
 					"Content-Type": "application/json",
 				},
 			});
+		},
+		"/randomWebsite": async (req) => {
+			const randomWebsite = await db.getRandomWebsite();
+			return new Response(JSON.stringify(randomWebsite), {
+				headers: {
+					"Content-Type": "application/json",
+				},
+			});
 		}
 	},
 	port: process.env.SEARCH_PORT || 8000,
