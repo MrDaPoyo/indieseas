@@ -1,0 +1,15 @@
+---
+const isIndexed = Astro.props.indexed as boolean;
+const url = Astro.props.url as string;
+---
+{isIndexed ? (
+        <p>Yes, we have scraped {url}!</p>
+        <div>
+            <u>If I scraped you, that means your robots.txt allowed me to do so.</u>
+            <small>However, if you want me to remove you from the database, please shoot me a DM at <strong>@dapoyo</strong> on Discord.</small>
+        </div>
+    ) : (
+        <p>No, we have not scraped {url} yet.</p>
+        <p>However, you might be in the queue to be scraped. But don't worry, if you explicitly disallowed IndieSeas to scrape your website, we will respect your choice.</p>
+        <small>If you want me to index you, shoot me a DM at <strong>@dapoyo</strong> on Discord.</small>
+    )}

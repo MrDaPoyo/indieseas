@@ -1,21 +1,36 @@
 ---
-const queryParam = Astro.url.searchParams.get("url");
-let query = queryParam ? decodeURIComponent(queryParam) : "";
-let isIndexed = false;
+import IndexedInfo from "./IndexedInfo.astro";
 
-if (!query.startsWith("https://")) {
-    query = "https://" + query;
-} else if (!query.startsWith("http://")) {
-    query = "http://" + query;
-} else if (!query.startsWith("http://") && !query.startsWith("https://")) {
-    query = "https://" + query;
+const baseUrl = Astro.url.origin;
+let hasChecked = false;
+let isIndexed = false;
+let url = "";
+let message = "Please enter a URL to check if it has been scraped.";
+
+if (Astro.request.method === "POST") {
+	try {
+		const data = await Astro.request.formData();
+		url = data.get("url") as string;
+
+		isIndexed = await checkIfIndexed(url);
+
+		hasChecked = true;
+		message = isIndexed
+			? `Yes, we have scraped ${url}! `
+			: `No, we have not scraped ${url} yet.`;
+	} catch (error) {
+		if (error instanceof Error) {
+			console.error(error.message);
+			message = "Error checking URL";
+			hasChecked = true;
+		}
+	}
 }
 
-try {
-	const queryUrl = new URL(query).hostname;
+async function checkIfIndexed(url: string) {
 	const targetUrl =
 		new URL(Astro.url.origin + "/api/isIndexed").href +
-		`?url=${encodeURIComponent(queryUrl)}`;
+		`?url=${encodeURIComponent(url)}`;
 
 	const response = await fetch(targetUrl, {
 		method: "GET",
@@ -30,13 +45,44 @@ try {
 		);
 	}
 
-	isIndexed = (await response.json()).isIndexed as boolean;
-    console.log(`isIndexed: ${isIndexed}`);
-} catch (e) {
-    console.error(e)
-	isIndexed = false;
+	const isIndexed = (await response.json()).isIndexed as boolean;
+	return isIndexed;
 }
 ---
+<span>
+    <a href="/">Back</a>
+</span>
 
-<a href="/">Back</a>
-<h2 class="website-title">{query} has {isIndexed ? "" : "NOT"} been indexed.</h2>
+<form method="POST">
+	<span id="baseUrl" style="display:none;">{baseUrl}</span>
+	<h2>Have we scraped u?</h2>
+
+	{
+		hasChecked && (
+			<div
+				class="message-box"
+				style="padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 5px;"
+			>
+				{isIndexed ? (
+					<IndexedInfo url={url} indexed={true} />
+				) : (
+					<IndexedInfo url={url} indexed={false} />
+				)}
+			</div>
+		)
+	}
+
+	<div>
+		<label for="url">Website URL (no https):</label>
+		<input
+			type="text"
+			maxlength="50"
+			id="url"
+			name="url"
+			placeholder="example.com"
+			required
+		/>
+	</div>
+
+	<button type="submit">Let's check!</button>
+</form>
