@@ -44,11 +44,11 @@ if (process.argv[2] === "--nekoweb") {
 		console.log((await allButtons.length) + " Buttons Found so far.");
 	console.log(
 		(await Array.from(await db.retrieveAllScrapedURLs()).length) +
-		" URLS Scraped so far."
+			" URLS Scraped so far."
 	);
 	console.log(
 		(await Array.from(await db.retrieveURLsToScrape()).length) +
-		" URLs to scrape."
+			" URLs to scrape."
 	);
 	process.exit(0);
 } else if (process.argv[2] === "--check-url") {
@@ -59,10 +59,16 @@ if (process.argv[2] === "--nekoweb") {
 	}
 	if (await db.isURLScraped(urlToCheck)) {
 		console.log(`URL ${urlToCheck} has already been scraped.`);
-	} else if ((await db.retrieveURLsToScrape()).some(item => item.url === urlToCheck)) {
+	} else if (
+		(await db.retrieveURLsToScrape()).some(
+			(item) => item.url === urlToCheck
+		)
+	) {
 		console.log(`URL ${urlToCheck} is on the queue.`);
 	} else {
-		console.log(`URL ${urlToCheck} has not been scraped nor is in the queue.`);
+		console.log(
+			`URL ${urlToCheck} has not been scraped nor is in the queue.`
+		);
 	}
 	process.exit(0);
 }
@@ -143,61 +149,52 @@ async function scrapeURL(url: string, url_id: number) {
 		currentlyScraping = currentlyScraping.filter(
 			(u: any) => u !== originalUrl
 		);
-
 	}
 }
 
-
 async function infinityScrape() {
-	while (true) {
-		urlsToScrape = await db.retrieveURLsToScrape();
+	urlsToScrape = await db.retrieveURLsToScrape();
 
-		const availableSlots = MAX_CONCURRENT_SCRAPERS - currentlyScraping.length;
-		const urlsToProcess = urlsToScrape.slice(0, availableSlots);
+	const availableSlots = MAX_CONCURRENT_SCRAPERS - currentlyScraping.length;
+	const urlsToProcess = urlsToScrape.slice(0, availableSlots);
 
-		// Start multiple scrape operations concurrently
-		const scrapePromises = urlsToProcess.map(url => {
-			if (!currentlyScraping.includes(url.url)) {
-				console.log(`Starting to scrape from scraper.ts: ${url.url}`);
-				return scrapeURL(url.url, url.url_id);
-			}
-			return Promise.resolve();
-		});
-
-		// Wait for any scrape operations to complete before checking again
-		if (scrapePromises.length > 0) {
-			await Promise.all(scrapePromises);
+	// Start multiple scrape operations concurrently
+	const scrapePromises = urlsToProcess.map((url) => {
+		if (!currentlyScraping.includes(url.url)) {
+			console.log(`Starting to scrape from scraper.ts: ${url.url}`);
+			return scrapeURL(url.url, url.url_id);
 		}
+		return Promise.resolve();
+	});
 
-		console.log(
-			`${currentlyScraping.length}/${MAX_CONCURRENT_SCRAPERS} active scrapers, ${urlsToScrape.length} URLs left to scrape.`
-		);
-
-		const allButtons = await db.retrieveAllButtons();
-		if (allButtons.length > 0) {
-			console.log(`Found ${allButtons.length} buttons so far.`);
-		}
-
-		await sleep(1000);
-		urlsToScrape = await db.retrieveURLsToScrape();
-		if (urlsToScrape.length === 0 && currentlyScraping.length === 0) {
-			console.log("No more URLs to scrape.");
-			break;
-		}
+	// Wait for any scrape operations to complete before checking again
+	if (scrapePromises.length > 0) {
+		await Promise.all(scrapePromises);
 	}
-	if (await db.retrieveURLsToScrape().length === 0) {
+
+	console.log(
+		`${currentlyScraping.length}/${MAX_CONCURRENT_SCRAPERS} active scrapers, ${urlsToScrape.length} URLs left to scrape.`
+	);
+
+	const allButtons = await db.retrieveAllButtons();
+	if (allButtons.length > 0) {
+		console.log(`Found ${allButtons.length} buttons so far.`);
+	}
+
+	await sleep(1000);
+	urlsToScrape = await db.retrieveURLsToScrape();
+	if (urlsToScrape.length === 0 && currentlyScraping.length === 0) {
 		console.log("No more URLs to scrape.");
-		return;
 	} else {
 		console.log("Running cleanup before next scraping cycle...");
 		try {
-			Bun.spawn(["pkill", "-f", "chromium"]);
-			Bun.spawn(["pkill", "-f", "puppeteer"]);
+			Bun.spawn(["killall", "chromium"]);
+			Bun.spawn(["killall", "puppeteer"]);
 			console.log("Cleanup complete. Restarting scrape process.");
 		} catch (error) {
 			console.error("Error during cleanup:", error);
 		}
-		infinityScrape();
+		return infinityScrape();
 	}
 }
 

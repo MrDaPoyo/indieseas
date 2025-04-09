@@ -29,10 +29,10 @@ export async function checkRobotsTxt(url: string): Promise<RobotsResult | null> 
 
         const rules = await parseRobotsTxt(robotsTxt);
         
-        const allowedPaths = await getAllowedPaths(rules, ['*', 'indieseas'], baseUrl.origin);
+        const allowedPaths = getAllowedPaths(rules, ['*', 'indieseas'], baseUrl.origin);
         return {
-            allowed: [allowedPaths['*'].allowed, allowedPaths['indieseas'].allowed],
-            disallowed: [allowedPaths['*'].disallowed, allowedPaths['indieseas'].disallowed],
+            allowed: allowedPaths['*'].allowed.concat(allowedPaths['indieseas'].allowed),
+            disallowed: allowedPaths['*'].disallowed.concat(allowedPaths['indieseas'].disallowed),
         };
     } catch (error) {
         console.warn(`Couldn't fetch robots.txt: ${error instanceof Error ? error.message : error}`);
@@ -101,8 +101,8 @@ interface RobotsResult {
     disallowed: string[];
 }
 
-function getAllowedPaths(rules: RobotsRule[], userAgents: string[], baseUrl: string): RobotsResult {
-    const result: RobotsResult = {};
+function getAllowedPaths(rules: RobotsRule[], userAgents: string[], baseUrl: string): Record<string, { allowed: string[], disallowed: string[] }> {
+    const result: Record<string, { allowed: string[], disallowed: string[] }> = {};
     const normalizedUserAgents = userAgents.map(ua => ua.toLowerCase());
     
     // Initialize result with all requested user agents
@@ -153,6 +153,20 @@ function getAllowedPaths(rules: RobotsRule[], userAgents: string[], baseUrl: str
         // If no specific allowed paths but disallow paths exist, root path is allowed
         if (result[ua].allowed.length === 0 && !result[ua].disallowed.includes(`${baseUrl}/`)) {
             result[ua].allowed.push(`${baseUrl}/`);
+        }
+    }
+    
+    if (result['*'] && normalizedUserAgents.length > 1) {
+        const wildcardDisallowed = new Set(result['*'].disallowed);
+        
+        for (const ua of normalizedUserAgents) {
+            if (ua === '*') continue;
+            
+            result[ua].allowed.forEach(allowedPath => {
+                result[ua].disallowed = result[ua].disallowed.filter(path => 
+                    !wildcardDisallowed.has(path) || result[ua].allowed.includes(path)
+                );
+            });
         }
     }
     
