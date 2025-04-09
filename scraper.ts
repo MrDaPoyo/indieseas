@@ -189,6 +189,14 @@ async function infinityScrape() {
 		console.log("No more URLs to scrape.");
 		return;
 	} else {
+		console.log("Running cleanup before next scraping cycle...");
+		try {
+			Bun.spawn(["pkill", "-f", "chromium"]);
+			Bun.spawn(["pkill", "-f", "puppeteer"]);
+			console.log("Cleanup complete. Restarting scrape process.");
+		} catch (error) {
+			console.error("Error during cleanup:", error);
+		}
 		infinityScrape();
 	}
 }
