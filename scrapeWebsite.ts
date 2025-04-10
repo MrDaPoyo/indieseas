@@ -27,32 +27,14 @@ function getImageSize(buffer: Buffer): { width: number; height: number } {
 
 async function fetchButton(url: string): Promise<Response> {
 	try {
-		const regularFetchResponse = await customFetch(url);
-		if (regularFetchResponse.ok) {
-			return regularFetchResponse;
+		const response = await customFetch(url);
+		if (!response.ok) {
+			console.error(`Failed to fetch button: ${url} - ${response.status}`);
+			return new Response(null, { status: response.status });
 		}
-		
-		const puppeteer = await import('puppeteer');
-		const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
-		const page = await browser.newPage();
-		
-		await page.goto(url, { waitUntil: 'networkidle0', timeout: 10000 });
-		const imageBuffer = await page.screenshot({ type: 'png' });
-		try {
-			await browser.close();
-		} catch (error) {
-			console.error('Error closing browser:', error);
-			await browser.close();
-		}
-		
-		return new Response(imageBuffer, {
-			status: 200,
-			headers: {
-				'Content-Type': 'image/png',
-			}
-		});
+		return response;
 	} catch (error) {
-		console.error(`Error fetching button with puppeteer: ${error}`);
+		console.error(`Error fetching button: ${error}`);
 		return new Response(null, { status: 404 });
 	}
 }
