@@ -342,7 +342,7 @@ export async function retrieveRandomWebsite() {
 
 const KNN_CANDIDATE_LIMIT = 150; // How many nearest neighbors to fetch initially (e.g., 3x final limit)
 const FINAL_RESULT_LIMIT = 150;
-const MIN_RELEVANCE_THRESHOLD = 1; // Minimum acceptable aggregated similarity score (adjust 0.0 to 1.0)
+const MIN_RELEVANCE_THRESHOLD = 0.75; // Minimum acceptable aggregated similarity score (adjust 0.0 to 1.0)
 const TITLE_WEIGHT = 1.5;
 const DESCRIPTION_WEIGHT = 1.25;
 const CORPUS_WEIGHT = 1.0;
