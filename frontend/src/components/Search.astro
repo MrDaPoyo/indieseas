@@ -79,7 +79,7 @@ const resultList = await results.results.results || [];
             }
         </style>
             <>
-                <p>Found {metadata?.finalCount || 0} results our of {metadata?.originalDbCount || 0} possible results for "{query}" in {time.toFixed(4)} miliseconds.</p>
+                <p>Found {metadata?.finalCount || 0} results out of {metadata?.originalDbCount || 0} possible results for "{query}" in {time.toFixed(4)} miliseconds.</p>
                 {
                     resultList
                         .map((result: { website: string, title?: string, description?: string, total_similarity: number, score?: number, matched_types_list: any}) => (
