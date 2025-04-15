@@ -340,103 +340,159 @@ export async function retrieveRandomWebsite() {
 	}
 }
 
+const KNN_CANDIDATE_LIMIT = 150; // How many nearest neighbors to fetch initially (e.g., 3x final limit)
+const FINAL_RESULT_LIMIT = 150;
+const MIN_RELEVANCE_THRESHOLD = 1; // Minimum acceptable aggregated similarity score (adjust 0.0 to 1.0)
+const TITLE_WEIGHT = 1.5;
+const DESCRIPTION_WEIGHT = 1.25;
+const CORPUS_WEIGHT = 1.0;
+
+
 export async function search(query: string) {
-	try {
-		// Convert the query to an embedding vector
-		const apiUrl = `${process.env.AI_API_URL!.replace(/\/$/, "")}:${process.env.AI_API_PORT
-			}/vectorize`;
-		const response = await fetch(apiUrl, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ text: [query] }),
-		});
+    const apiUrlBase = process.env.AI_API_URL;
+    const apiPort = process.env.AI_API_PORT;
+    if (!apiUrlBase || !apiPort) {
+        console.error("Error: AI_API_URL or AI_API_PORT environment variables are not set.");
+        return { results: [], metadata: { time: 0, originalCount: 0, filteredCount: 0, error: "API configuration missing" } };
+    }
+    const apiUrl = `${apiUrlBase.replace(/\/$/, "")}:${apiPort}/vectorize`;
 
-		if (!response.ok)
-			throw new Error(
-				`API request failed with status ${response.status}`
-			);
+    const timer = performance.now();
 
-		const timer = performance.now();
+    try {
+        // 1. Get Embedding via the super duper cool vectorize.ts api
+        const response = await fetch(apiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: [query] }),
+        });
 
-		const embedding = await response.json();
+        if (!response.ok) {
+            // Log or capture more response body info if possible
+            const errorBody = await response.text().catch(() => "Could not read error body");
+            console.error(`API request failed with status ${response.status}: ${errorBody}`);
+            throw new Error(`API request failed with status ${response.status}`);
+        }
 
-		if (
-			!embedding.vectors ||
-			!Array.isArray(embedding.vectors) ||
-			embedding.vectors.length === 0
-		) {
-			throw new Error("API returned invalid embedding format");
+        const embeddingResponse = await response.json();
+
+        if (
+            !embeddingResponse.vectors ||
+            !Array.isArray(embeddingResponse.vectors) ||
+            embeddingResponse.vectors.length === 0 ||
+            !Array.isArray(embeddingResponse.vectors[0]) // Ensure inner element is an array
+        ) {
+            console.error("API returned invalid embedding format:", embeddingResponse);
+            throw new Error("API returned invalid embedding format");
+        }
+
+        const queryVector: number[] = embeddingResponse.vectors[0];
+        const vectorString = `[${queryVector.join(",")}]`;
+
+		// 2. Perform Optimized Vector Search & Aggregation in SQL
+		// This query first finds the nearest neighbors using the index,
+		// then calculates weighted similarity, aggregates per website,
+		// and finally joins with visitedURLs.
+		// 2. Perform Optimized Vector Search & Aggregation in SQL
+        const results = await db.execute(sql`
+            WITH nearest_matches AS (
+                -- Step 1: Find K nearest *individual* embeddings using the HNSW index
+                SELECT
+                    id,
+                    website,
+                    type,
+                    embedding <=> ${vectorString}::vector AS distance -- $1 (vector)
+                FROM ${schema.websitesIndex}
+                ORDER BY
+                    distance ASC
+                LIMIT ${KNN_CANDIDATE_LIMIT}::integer -- $2 (Explicitly integer)
+            ),
+            similarity_scores AS (
+                -- Step 2: Calculate similarity and apply weights to the candidates
+                SELECT
+                    website,
+                    type,
+                    1 - distance AS similarity,
+                    CASE type
+                        WHEN 'title' THEN (1 - distance) * ${TITLE_WEIGHT}::float -- $3 (Explicitly float)
+                        WHEN 'description' THEN (1 - distance) * ${DESCRIPTION_WEIGHT}::float -- $4 (Explicitly float)
+                        WHEN 'corpus' THEN (1 - distance) * ${CORPUS_WEIGHT}::float -- $5 (Explicitly float)
+                        ELSE (1 - distance)
+                    END AS weighted_similarity
+                FROM nearest_matches
+                WHERE website IS NOT NULL
+            ),
+            aggregated_scores AS (
+                -- Step 3: Aggregate scores per website
+                SELECT
+                    website,
+                    SUM(weighted_similarity) as total_similarity,
+                    COUNT(DISTINCT type) as matched_types_count,
+                    ARRAY_AGG(DISTINCT type) as matched_types_list
+                FROM similarity_scores
+                GROUP BY website
+            )
+            -- Step 4: Join with visitedURLs to get metadata and apply final ordering/limit
+            SELECT
+                ag.website,
+                ag.total_similarity,
+                ag.matched_types_count,
+                ag.matched_types_list,
+                vu.title,
+                vu.description,
+                vu.amount_of_buttons
+            FROM aggregated_scores ag
+            JOIN ${schema.visitedURLs} vu ON ag.website = vu.path
+            ORDER BY
+                ag.total_similarity DESC
+            LIMIT ${FINAL_RESULT_LIMIT}::integer; -- $6 (Explicitly integer)
+        `);
+
+        const queryTime = performance.now() - timer;
+
+        const filteredResults = results.rows.filter(row =>
+            row.total_similarity != null && // Check for null/undefined
+            row.total_similarity as number >= MIN_RELEVANCE_THRESHOLD &&
+            row.title != null && // Ensure we have a title to display
+            typeof row.title === 'string' && // Type guard
+            row.title.trim() !== '' // Ensure title isn't empty
+        );
+
+        // 4. Format Output
+        const finalOutput = filteredResults.map(row => ({
+            website: row.website,
+            title: row.title,
+            description: row.description,
+            amount_of_buttons: row.amount_of_buttons,
+            score: row.total_similarity, // The final relevance score
+            matched_types_count: row.matched_types_count,
+            matched_types_list: row.matched_types_list
+        }));
+		
+		const finalResults = {
+			results: finalOutput,
+            metadata: {
+                time: queryTime,
+                originalDbCount: results.rows.length,
+                finalCount: finalOutput.length,
+                queryVector: queryVector
+            }
 		}
 
-		// Convert the embedding array to a PostgreSQL vector string format
-		const vectorString = `[${embedding.vectors[0].join(",")}]`;
+        return finalResults;
 
-		// Perform vector similarity search with different weights for each type
-		const results = await db.execute(sql`
-			WITH similarity_scores AS (
-				SELECT 
-					website, 
-					type,
-					1 - (embedding <=> ${vectorString}::vector) as similarity
-				FROM websites_index 
-				WHERE website IS NOT NULL
-			),
-			aggregated_scores AS (
-				SELECT 
-					website,
-					SUM(CASE WHEN type = 'title' THEN similarity * 1.5 
-							WHEN type = 'description' THEN similarity * 1.25
-							WHEN type = 'corpus' THEN similarity * 1.0
-							ELSE similarity END) as total_similarity,
-					COUNT(DISTINCT type) as matched_types
-				FROM similarity_scores
-				GROUP BY website
-			)
-			SELECT * FROM aggregated_scores
-			ORDER BY total_similarity DESC 
-			LIMIT 50;
-		`);
+    } catch (error) {
+        const queryTime = performance.now() - timer;
+        console.error("Error during search operation:", error);
 
-		if (!results.rows[0] || results.rows.length === 0) {
-			return [];
-		}
-
-		for (let i = 0; i < results.rows.length; i++) {
-			const websitePath = results.rows[i].website as string;
-			if (websitePath) {
-				const websiteInfo = await db.query.visitedURLs.findFirst({
-					where: eq(schema.visitedURLs.path, websitePath),
-				});
-
-				if (websiteInfo) {
-					results.rows[i] = {
-						...results.rows[i],
-						title: websiteInfo.title,
-						description: websiteInfo.description,
-						amount_of_buttons: websiteInfo.amount_of_buttons,
-						similarity: results.rows[i].total_similarity,
-					};
-				}
-			}
-		}
-
-		const filteredResults = results.rows.filter(row => 
-			row.total_similarity !== null && 
-			row.total_similarity !== undefined ||
-			row.title !== null &&
-			row.title !== undefined
-		);
-
-		return { 
-			results: filteredResults, 
-			metadata: { 
-				time: performance.now() - timer,
-				originalCount: results.rows.length,
-				filteredCount: filteredResults.length
-			} 
-		};
-	} catch (error) {
-		console.error("Error in vector search:", error);
-		return [];
-	}
+        return {
+            results: [],
+            metadata: {
+                time: queryTime,
+                originalDbCount: 0,
+                finalCount: 0,
+                error: error instanceof Error ? error.message : "An unknown error occurred"
+            }
+        };
+    }
 }

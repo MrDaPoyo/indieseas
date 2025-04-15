@@ -30,6 +30,7 @@ let prohibitedURLs = [
 	"deviantart.com",
 	"artstation.com",
 	"ze.wtf",
+	"file.garden",
 ];
 
 if (process.argv[2] === "--nekoweb") {
