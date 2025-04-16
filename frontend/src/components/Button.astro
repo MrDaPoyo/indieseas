@@ -1,0 +1,85 @@
+---
+export interface ButtonProps {
+	id: number;
+	filename: string;
+	scraped_date: string;
+	found_url: string;
+	hash: string;
+	image: {
+		type: string;
+		data: number[];
+	};
+	src: string;
+	alt: string;
+	links_to: string;
+}
+
+const { src, alt, links_to, image } = Astro.props;
+---
+
+<div class="background"></div>
+
+<a
+	href={links_to}
+	target="_blank"
+	rel="noopener noreferrer"
+	class="button-link"
+	aria-label={`Visit ${alt}`}
+	title={alt}
+>
+	<img
+		src={image && image.data
+			? `data:${image.type};base64,${Buffer.from(image.data).toString("base64")}`
+			: src}
+		alt={alt}
+		class="button-image"
+		loading="lazy"
+	/>
+</a>
+
+<style>
+	.button-link {
+		display: inline-block;
+		cursor: pointer;
+		border-radius: 4px;
+		overflow: hidden;
+		transition: transform 0.3s ease;
+		box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+		z-index: 1;
+	}
+
+	.button-link:hover {
+		transform: scale(1.1);
+		box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+		z-index: 10000000000000;
+		position: relative;
+	}
+
+	.button-image {
+		display: block;
+		max-width: 100%;
+		height: auto;
+	}
+
+	@media (prefers-reduced-motion) {
+		.button-link {
+			transition: none;
+		}
+
+		.button-link:hover {
+			transform: none;
+			box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+		}
+	}
+
+	.background {
+		width: 100%;
+		height: 100%;
+		position: absolute;
+		top: 0;
+		left: 0;
+		display: none;
+		background-color: rgba(0, 0, 0, 0.5);
+		z-index: 9999;
+	}
+</style>

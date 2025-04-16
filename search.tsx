@@ -52,6 +52,14 @@ Bun.serve({
 					"Content-Type": "application/json",
 				},
 			});
+		},
+		"/retrieveAllButtons": async (req) => {
+			const buttons = await db.retrieveAllButtons();
+			return new Response(JSON.stringify(buttons), {
+				headers: {
+					"Content-Type": "application/json",
+				},
+			});
 		}
 	},
 	port: process.env.SEARCH_PORT || 8000,

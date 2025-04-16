@@ -1,0 +1,45 @@
+---
+import Button from "./Button.astro";
+
+const baseUrl = Astro.url.origin;
+
+const response = await fetch(
+	new URL(Astro.url.origin + "/api/allButtons").href,
+	{
+		method: "GET",
+		headers: {
+			"Content-Type": "application/json",
+		},
+	}
+);
+
+if (!response.ok) {
+	throw new Error(
+		`Error fetching buttons: ${response.statusText} (${response.status})`
+	);
+}
+
+const buttons = await response.json();
+---
+<span>
+    <a href="/">Back</a>
+</span>
+<div class="button-container">
+	{
+		buttons.map((button: any) => (
+			<Button
+				src={button.src}
+				image={button.image}
+				links_to={button.links_to}
+				alt={button.alt}
+			/>
+		))
+	}
+</div>
+
+<style>
+	.button-container {
+		padding: 1rem;
+		position: relative;
+	}
+</style>
