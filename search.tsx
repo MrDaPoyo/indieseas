@@ -83,6 +83,52 @@ Bun.serve({
 					"Content-Type": "application/json",
 				},
 			});
+		},
+		"/buttonSearch": async (req) => {
+			const url = new URL(req.url);
+			const query = decodeURIComponent(url.searchParams.get("q") || "");
+			if (!query) {
+				return new Response("No query provided", { status: 400 });
+			}
+			const buttons = await db.retrieveAllButtons();
+			if (!buttons) return new Response("No buttons found", { status: 404 });
+			const filteredButtons = buttons.filter((button: any) => {
+				const query_lower = query.toLowerCase();
+				return (
+					(button.title?.toLowerCase().includes(query_lower)) || 
+					(button.alt?.toLowerCase().includes(query_lower)) || 
+					(button.links_to?.toLowerCase().includes(query_lower)) ||
+					(button.found_url?.toLowerCase().includes(query_lower))
+				);
+			});
+			
+			const page = parseInt(url.searchParams.get("page") || "1");
+			const pageSize = 100;
+			const start = (page - 1) * pageSize;
+			const end = start + pageSize;
+			const paginatedButtons = filteredButtons.slice(start, end);
+			
+			const totalButtons = filteredButtons.length;
+			const totalPages = Math.ceil(totalButtons / pageSize);
+			const hasNextPage = page < totalPages;
+			const hasPreviousPage = page > 1;
+			
+			return new Response(JSON.stringify({
+				buttons: paginatedButtons,
+				pagination: {
+					currentPage: page,
+					totalPages,
+					totalButtons,
+					hasNextPage,
+					hasPreviousPage,
+					nextPage: hasNextPage ? page + 1 : null,
+					previousPage: hasPreviousPage ? page - 1 : null
+				}
+			}), {
+				headers: {
+					"Content-Type": "application/json",
+				},
+			});
 		}
 	},
 	port: process.env.SEARCH_PORT || 8000,

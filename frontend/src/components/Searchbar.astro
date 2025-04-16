@@ -1,11 +1,16 @@
+---
+const urlpathname = Astro.props.buttonSearch ? "/buttonSearch" : "/search";
+---
+
 <form action="/search">
+	<span id="typeOfSearch" style="display: none;">{urlpathname}</span>
+	
 	<input
 		type="text"
 		name="q"
 		id="search"
 		placeholder="Sail the seven webs! Arr! >:3"
 		value={Astro.props.query ? decodeURIComponent(Astro.props.query) : ""}
-		
 		autocomplete="off"
 	/>
 	<button type="submit">Search</button>
@@ -14,7 +19,7 @@
 		form?.addEventListener("submit", (e) => {
 			e.preventDefault();
 			const input = document.querySelector("#search") as HTMLInputElement;
-			if (input && input.value.trim() == "" || input.value == null) {
+			if ((input && input.value.trim() == "") || input.value == null) {
 				alert("Please enter a search term!");
 				return;
 			}
@@ -22,12 +27,16 @@
 			if (url.searchParams.has("q")) {
 				url.searchParams.delete("q");
 			}
-			url.pathname = "/search";
-			url.searchParams.append("q", encodeURIComponent(input.value.trim()));
+
+			url.pathname = document.getElementById("typeOfSearch").value ? "/search" : "/buttons";
+
+			url.searchParams.append(
+				"q",
+				encodeURIComponent(input.value.trim())
+			);
 
 			if (input && input.value.trim() !== "") {
-				window.location.href =
-					url.href
+				window.location.href = url.href;
 			}
 		});
 	</script>

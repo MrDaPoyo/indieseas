@@ -1,82 +1,156 @@
 ---
 import Button from "./Button.astro";
 
-const baseUrl = Astro.url.origin;
+import Searchbar from "./Searchbar.astro";
 
-const response = await fetch(
-	new URL(Astro.url.origin + `/api/allButtons?page=${Astro.url.searchParams.get("page") || 1}`).href,
-	{
+const queryParam = Astro.url.searchParams.get("q");
+const query = queryParam ? decodeURIComponent(queryParam) : "";
+let results, pagination, buttonsList;
+
+if (query && query.trim() !== "") {
+	const targetUrl =
+		new URL(Astro.url.origin + "/api/buttonSearch").href +
+		"?q=" +
+		encodeURIComponent(query);
+
+	const buttonSearchResponse = await fetch(targetUrl, {
 		method: "GET",
 		headers: {
 			"Content-Type": "application/json",
 		},
+	});
+
+	if (!buttonSearchResponse.ok) {
+		throw new Error(
+			`Error fetching search results: ${buttonSearchResponse.statusText} (${buttonSearchResponse.status})`
+		);
 	}
-);
 
-if (!response.ok) {
-	throw new Error(
-		`Error fetching buttons: ${response.statusText} (${response.status})`
+	results = await buttonSearchResponse.json();
+	buttonsList = results.results.buttons || [];
+	pagination = results.results.pagination || {
+		currentPage: 1,
+		totalPages: 1,
+		totalButtons: buttonsList.length,
+		hasPreviousPage: false,
+		hasNextPage: false,
+		previousPage: null,
+		nextPage: null
+	};
+} else {
+	const response = await fetch(
+		new URL(
+			Astro.url.origin +
+				`/api/allButtons?page=${Astro.url.searchParams.get("page") || 1}`
+		).href,
+		{
+			method: "GET",
+			headers: {
+				"Content-Type": "application/json",
+			},
+		}
 	);
-}
 
-const buttons = await response.json();
-const pagination = buttons.pagination;
+	if (!response.ok) {
+		throw new Error(
+			`Error fetching buttons: ${response.statusText} (${response.status})`
+		);
+	}
+
+	const buttons = await response.json();
+	buttonsList = buttons.buttons || [];
+	pagination = buttons.pagination;
+}
 ---
+
+<div class="header">
+	<a href="/" style="text-decoration: none; color: inherit;">
+		<h1 class="mega-title" style="font-size: 3rem; margin: 0;">
+			IndieSeas
+		</h1>
+	</a>
+	<span style="margin: 5px;"></span>
+	<Searchbar query={query} buttonSearch="true" />
+	<style>
+		.header {
+			display: flex;
+			flex-direction: row;
+			justify-content: start;
+			align-items: center;
+			width: 100%;
+			padding: 5px;
+		}
+	</style>
+</div>
+<hr style="margin-top: 0;" />
 <div class="pagination-container">
-    <span>
-        <a href="/">Back</a>
-    </span>
-    
-    <div class="pagination">
-        {pagination.hasPreviousPage && (
-            <a href={`?page=${pagination.previousPage}`} class="pagination-link">Previous</a>
-        )}
-        
-        <span class="page-info">
-            Page {pagination.currentPage} of {pagination.totalPages}
-            <span class="total-count">({pagination.totalButtons} total)</span>
-        </span>
-        
-        {pagination.hasNextPage && (
-            <a href={`?page=${pagination.nextPage}`} class="pagination-link">Next</a>
-        )}
-    </div>
+	<span>
+		<p>Found {pagination.totalButtons} buttons for "{query}"!</p>
+	</span>
+
+	<div class="pagination">
+		{
+			pagination.hasPreviousPage && (
+				<a
+					href={`?page=${pagination.previousPage}`}
+					class="pagination-link"
+				>
+					Previous
+				</a>
+			)
+		}
+
+		<span class="page-info">
+			Page {pagination.currentPage} of {pagination.totalPages}
+			<span class="total-count">({pagination.totalButtons} total)</span>
+		</span>
+
+		{
+			pagination.hasNextPage && (
+				<a
+					href={`?page=${pagination.nextPage}`}
+					class="pagination-link"
+				>
+					Next
+				</a>
+			)
+		}
+	</div>
 </div>
 
 <style>
-    .pagination-container {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.5rem 1rem;
-    }
-    
-    .pagination {
-        display: flex;
-        gap: 1rem;
-        align-items: center;
-    }
-    
-    .pagination-link {
-        padding: 0.25rem 0.5rem;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        text-decoration: none;
-    }
-    
-    .pagination-link:hover {
-        background-color: #f0f0f0;
-    }
-    
-    .total-count {
-        font-size: 0.8rem;
-        color: #666;
-        margin-left: 0.5rem;
-    }
+	.pagination-container {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.pagination {
+		display: flex;
+		gap: 1rem;
+		align-items: center;
+	}
+
+	.pagination-link {
+		padding: 0.25rem 0.5rem;
+		border: 1px solid #ccc;
+		border-radius: 4px;
+		text-decoration: none;
+	}
+
+	.pagination-link:hover {
+		background-color: #f0f0f0;
+	}
+
+	.total-count {
+		font-size: 0.8rem;
+		color: #666;
+		margin-left: 0.5rem;
+	}
 </style>
 <div class="button-container">
 	{
-		buttons.buttons.map((button: any) => (
+		buttonsList.map((button: any) => (
 			<Button
 				src={button.src}
 				image={button.image}
