@@ -61,7 +61,24 @@ Bun.serve({
 			const start = (page - 1) * pageSize;
 			const end = start + pageSize;
 			const paginatedButtons = buttons.slice(start, end);
-			return new Response(JSON.stringify(paginatedButtons), {
+			
+			const totalButtons = buttons.length;
+			const totalPages = Math.ceil(totalButtons / pageSize);
+			const hasNextPage = page < totalPages;
+			const hasPreviousPage = page > 1;
+			
+			return new Response(JSON.stringify({
+				buttons: paginatedButtons,
+				pagination: {
+					currentPage: page,
+					totalPages,
+					totalButtons,
+					hasNextPage,
+					hasPreviousPage,
+					nextPage: hasNextPage ? page + 1 : null,
+					previousPage: hasPreviousPage ? page - 1 : null
+				}
+			}), {
 				headers: {
 					"Content-Type": "application/json",
 				},
