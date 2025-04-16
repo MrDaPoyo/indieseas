@@ -405,7 +405,6 @@ export async function search(query: string) {
 		// This query first finds the nearest neighbors using the index,
 		// then calculates weighted similarity, aggregates per website,
 		// and finally joins with visitedURLs.
-		// 2. Perform Optimized Vector Search & Aggregation in SQL
         const results = await db.execute(sql`
             WITH nearest_matches AS (
                 -- Step 1: Find K nearest *individual* embeddings using the HNSW index
