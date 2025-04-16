@@ -69,5 +69,4 @@ export async function colorizeAllButtons() {
 
 if (process.argv[2] === "--colorize") {
     await colorizeAllButtons();
-    process.exit(0);
 }
