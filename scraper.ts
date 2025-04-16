@@ -72,7 +72,17 @@ if (process.argv[2] === "--nekoweb") {
 		);
 	}
 	process.exit(0);
+} else if (process.argv[2] === "--remove-url") {
+	const urlToRemove = process.argv[3];
+	if (!urlToRemove) {
+		console.error("Please provide a URL to remove.");
+		process.exit(1);
+	}
+	await db.removeURLEntirely(urlToRemove);
+	console.log(`Removed URL ${urlToRemove} from the queue.`);
+	process.exit(0);
 }
+
 
 if (urlsToScrape.length === 0) {
 	if (process.argv[2] != undefined && process.argv[2] != "--nekoweb") {

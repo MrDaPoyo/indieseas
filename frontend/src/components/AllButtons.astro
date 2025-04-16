@@ -8,11 +8,13 @@ const query = queryParam ? decodeURIComponent(queryParam) : "";
 let results, pagination, buttonsList;
 
 if (query && query.trim() !== "") {
-	const targetUrl =
+	const isColorFilter = Astro.url.searchParams.get("color") == "true";
+	const colorParam = Astro.url.searchParams.get("q");
+	const targetUrl = 
 		new URL(Astro.url.origin + "/api/buttonSearch").href +
-		"?q=" +
-		encodeURIComponent(query);
-
+		"?q=" + encodeURIComponent(query) + 
+		(isColorFilter ? `&color=${encodeURIComponent(colorParam)}` : "");
+	
 	const buttonSearchResponse = await fetch(targetUrl, {
 		method: "GET",
 		headers: {
@@ -119,6 +121,52 @@ const queryMessage = query
 				</a>
 			)
 		}
+
+		<div class="color-filter">
+			<label for="color-select">Filter by color:</label>
+			<select id="color-select" class="color-select">
+				<option value="">All colors</option>
+				<option value="red">Red</option>
+				<option value="blue">Blue</option>
+				<option value="green">Green</option>
+				<option value="yellow">Yellow</option>
+				<option value="purple">Purple</option>
+				<option value="orange">Orange</option>
+				<option value="black">Black</option>
+				<option value="white">White</option>
+				<option value="pink">Pink</option>
+				<option value="brown">Brown</option>
+			</select>
+		</div>
+
+		<script>
+			document.getElementById('color-select').addEventListener('change', function() {
+				const color = this.value;
+				const currentUrl = new URL(window.location.href);
+				const currentPage = currentUrl.searchParams.get('page') || '1';
+				
+				if (color) {
+					window.location.href = `/buttons?color=true&q=${color}&page=${currentPage}`;
+				} else {
+					window.location.href = `/buttons?page=${currentPage}`;
+				}
+			});
+		</script>
+
+		<style>
+			.color-filter {
+				display: flex;
+				align-items: center;
+				gap: 0.5rem;
+				margin-left: auto;
+			}
+			
+			.color-select {
+				padding: 0.25rem;
+				border-radius: 4px;
+				border: 1px solid #ccc;
+			}
+		</style>
 	</div>
 </div>
 
