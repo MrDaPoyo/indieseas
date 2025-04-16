@@ -3,8 +3,9 @@ import type { APIRoute } from "astro";
 export const GET: APIRoute = async (request) => {
     try {
         const timer = performance.now();
-        const query = request.url.searchParams.get("q") || null;
-        const color = request.url.searchParams.get("color") || false;
+        const url = new URL(request.url);
+        const query = url.searchParams.get("q") || null;
+        const color = url.searchParams.get("color") || false;
         
         if (!query || query.trim() === "") {
             return new Response(
@@ -18,7 +19,7 @@ export const GET: APIRoute = async (request) => {
 
         if (color) {
             return await fetch(
-                `http://localhost:8000/buttonSearchColor?q=${encodeURIComponent(query)}&color=true&page=${request.url.searchParams.get("page") || 1}&rainbow=${request.url.searchParams.get("rainbow") == "true" ? "true" : "false"}`,
+                `http://localhost:8000/buttonSearchColor?q=${encodeURIComponent(query)}&color=true&page=${url.searchParams.get("page") || 1}&rainbow=${url.searchParams.get("rainbow") == "true" ? "true" : "false"}`,
             ).then(async (response) => {
                 if (!response.ok) {
                     return new Response(

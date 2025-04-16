@@ -182,7 +182,7 @@ Bun.serve({
 			}).filter(button => button.distance < maxDistance)
 				.sort((a, b) => a.distance - b.distance);
 
-			function deltaE(rgbA, rgbB) {
+			function deltaE(rgbA: number[], rgbB: number[]): number {
 				let labA = rgb2lab(rgbA);
 				let labB = rgb2lab(rgbB);
 				let deltaL = labA[0] - labB[0];
@@ -202,7 +202,7 @@ Bun.serve({
 				return i < 0 ? 0 : Math.sqrt(i);
 			}
 
-			function rgb2lab(rgb) {
+			function rgb2lab(rgb: number[]): number[] {
 				let r = rgb[0] / 255, g = rgb[1] / 255, b = rgb[2] / 255, x, y, z;
 				r = (r > 0.04045) ? Math.pow((r + 0.055) / 1.055, 2.4) : r / 12.92;
 				g = (g > 0.04045) ? Math.pow((g + 0.055) / 1.055, 2.4) : g / 12.92;
