@@ -218,7 +218,6 @@ Bun.serve({
 
 			const page = parseInt(url.searchParams.get("page") || "1");
 			const pageSize = parseInt(url.searchParams.get("pageSize") || "200");
-			
 			const totalButtons = sortedButtons.length;
 			const totalPages = Math.ceil(totalButtons / pageSize);
 			const validPage = Math.max(1, Math.min(page, totalPages || 1));
