@@ -169,14 +169,12 @@ Bun.serve({
 			if (!buttons) return new Response("No buttons found", { status: 404 });
 
 			const queryColor = Bun.color(query, "[rgb]") || null;
-			console.log(`Query color: ${queryColor}`);
 
 			const buttonsWithColors = buttons.filter(button => button.avg_color);
 			const sortedButtons = buttonsWithColors.map(button => {
 				const colorComponents = Bun.color(button.avg_color, "[rgb]") || [0, 0, 0];
 				if (colorComponents.length !== 3) return { ...button, distance: Infinity };
 				const distance = deltaE(queryColor, colorComponents);
-				console.log(`Comparing ${queryColor} with ${button.avg_color} - Distance: ${distance}`);
 				return { ...button, distance };
 			}).filter(button => button.distance < 20) // Filter buttons with distance under 10
 				.sort((a, b) => a.distance - b.distance);
