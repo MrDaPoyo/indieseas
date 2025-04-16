@@ -56,12 +56,10 @@ Bun.serve({
 		"/retrieveAllButtons": async (req) => {
 			const buttons = await db.retrieveAllButtons();
 			const url = new URL(req.url);
-			const rainbowFilter = true;
+			const rainbowFilter = url.searchParams.get("rainbow") === "true";
 			const page = parseInt(url.searchParams.get("page") || "1");
-			const pageSize = 100;
-			const start = (page - 1) * pageSize;
-			const end = start + pageSize;
-
+			const pageSize = parseInt(url.searchParams.get("pageSize") || "100");
+			
 			let sortedButtons = [...buttons];
 			if (rainbowFilter) {
 				console.log("Sorting buttons by rainbow filter");
@@ -73,23 +71,27 @@ Bun.serve({
 				});
 			}
 
-			let paginatedButtons = sortedButtons.slice(start, end);
-
-			const totalButtons = buttons.length;
+			const totalButtons = sortedButtons.length;
 			const totalPages = Math.ceil(totalButtons / pageSize);
-			const hasNextPage = page < totalPages;
-			const hasPreviousPage = page > 1;
+			const validPage = Math.max(1, Math.min(page, totalPages || 1));
+			const start = (validPage - 1) * pageSize;
+			const end = start + pageSize;
+			
+			const paginatedButtons = sortedButtons.slice(start, end);
+			const hasNextPage = validPage < totalPages;
+			const hasPreviousPage = validPage > 1;
 
 			return new Response(JSON.stringify({
 				buttons: paginatedButtons,
 				pagination: {
-					currentPage: page,
+					currentPage: validPage,
 					totalPages,
 					totalButtons,
 					hasNextPage,
 					hasPreviousPage,
-					nextPage: hasNextPage ? page + 1 : null,
-					previousPage: hasPreviousPage ? page - 1 : null
+					nextPage: hasNextPage ? validPage + 1 : null,
+					previousPage: hasPreviousPage ? validPage - 1 : null,
+					pageSize
 				}
 			}), {
 				headers: {
@@ -99,13 +101,15 @@ Bun.serve({
 		},
 		"/buttonSearch": async (req) => {
 			const url = new URL(req.url);
-			const rainbowFilter = url.searchParams.get("rainbow") == "true";
+			const rainbowFilter = url.searchParams.get("rainbow") === "true";
 			const query = decodeURIComponent(url.searchParams.get("q") || "");
 			if (!query) {
 				return new Response("No query provided", { status: 400 });
 			}
+			
 			const buttons = await db.retrieveAllButtons();
 			if (!buttons) return new Response("No buttons found", { status: 404 });
+			
 			const filteredButtons = buttons.filter((button: any) => {
 				const query_lower = query.toLowerCase();
 				return (
@@ -117,17 +121,8 @@ Bun.serve({
 			});
 
 			const page = parseInt(url.searchParams.get("page") || "1");
-			const pageSize = 200;
-			const start = (page - 1) * pageSize;
-			const end = start + pageSize;
-			let paginatedButtons = filteredButtons.slice(start, end);
-
-			const totalButtons = filteredButtons.length;
-			const totalPages = Math.ceil(totalButtons / pageSize);
-			const hasNextPage = page < totalPages;
-			const hasPreviousPage = page > 1;
-
-
+			const pageSize = parseInt(url.searchParams.get("pageSize") || "200");
+			
 			let sortedButtons = [...filteredButtons];
 			if (rainbowFilter) {
 				sortedButtons.sort((a, b) => {
@@ -136,22 +131,29 @@ Bun.serve({
 					if (!b.avg_color) return -1;
 					return a.avg_color.localeCompare(b.avg_color);
 				});
-				paginatedButtons = sortedButtons.slice(start, end);
-			} else {
-				paginatedButtons = filteredButtons.slice(start, end);
 			}
 
+			const totalButtons = sortedButtons.length;
+			const totalPages = Math.ceil(totalButtons / pageSize);
+			const validPage = Math.max(1, Math.min(page, totalPages || 1));
+			const start = (validPage - 1) * pageSize;
+			const end = start + pageSize;
+			
+			const paginatedButtons = sortedButtons.slice(start, end);
+			const hasNextPage = validPage < totalPages;
+			const hasPreviousPage = validPage > 1;
 
 			return new Response(JSON.stringify({
 				buttons: paginatedButtons,
 				pagination: {
-					currentPage: page,
+					currentPage: validPage,
 					totalPages,
 					totalButtons,
 					hasNextPage,
 					hasPreviousPage,
-					nextPage: hasNextPage ? page + 1 : null,
-					previousPage: hasPreviousPage ? page - 1 : null
+					nextPage: hasNextPage ? validPage + 1 : null,
+					previousPage: hasPreviousPage ? validPage - 1 : null,
+					pageSize
 				}
 			}), {
 				headers: {
@@ -169,6 +171,7 @@ Bun.serve({
 			if (!buttons) return new Response("No buttons found", { status: 404 });
 
 			const queryColor = Bun.color(query, "[rgb]") || null;
+			const maxDistance = parseFloat(url.searchParams.get("maxDistance") || "20");
 
 			const buttonsWithColors = buttons.filter(button => button.avg_color);
 			const sortedButtons = buttonsWithColors.map(button => {
@@ -176,7 +179,7 @@ Bun.serve({
 				if (colorComponents.length !== 3) return { ...button, distance: Infinity };
 				const distance = deltaE(queryColor, colorComponents);
 				return { ...button, distance };
-			}).filter(button => button.distance < 20) // Filter buttons with distance under 10
+			}).filter(button => button.distance < maxDistance)
 				.sort((a, b) => a.distance - b.distance);
 
 			function deltaE(rgbA, rgbB) {
@@ -214,26 +217,29 @@ Bun.serve({
 			}
 
 			const page = parseInt(url.searchParams.get("page") || "1");
-			const pageSize = 200;
-			const start = (page - 1) * pageSize;
-			const end = start + pageSize;
-			const paginatedButtons = sortedButtons.slice(start, end);
-
+			const pageSize = parseInt(url.searchParams.get("pageSize") || "200");
+			
 			const totalButtons = sortedButtons.length;
 			const totalPages = Math.ceil(totalButtons / pageSize);
-			const hasNextPage = page < totalPages;
-			const hasPreviousPage = page > 1;
+			const validPage = Math.max(1, Math.min(page, totalPages || 1));
+			const start = (validPage - 1) * pageSize;
+			const end = start + pageSize;
+			
+			const paginatedButtons = sortedButtons.slice(start, end);
+			const hasNextPage = validPage < totalPages;
+			const hasPreviousPage = validPage > 1;
 
 			return new Response(JSON.stringify({
 				buttons: paginatedButtons,
 				pagination: {
-					currentPage: page,
+					currentPage: validPage,
 					totalPages,
 					totalButtons,
 					hasNextPage,
 					hasPreviousPage,
-					nextPage: hasNextPage ? page + 1 : null,
-					previousPage: hasPreviousPage ? page - 1 : null
+					nextPage: hasNextPage ? validPage + 1 : null,
+					previousPage: hasPreviousPage ? validPage - 1 : null,
+					pageSize
 				}
 			}), {
 				headers: {
