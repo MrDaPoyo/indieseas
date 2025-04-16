@@ -20,13 +20,64 @@ if (!response.ok) {
 }
 
 const buttons = await response.json();
+const pagination = buttons.pagination;
+console.log(buttons);
 ---
-<span>
-    <a href="/">Back</a>
-</span>
+<div class="pagination-container">
+    <span>
+        <a href="/">Back</a>
+    </span>
+    
+    <div class="pagination">
+        {pagination.hasPreviousPage && (
+            <a href={`?page=${pagination.previousPage}`} class="pagination-link">Previous</a>
+        )}
+        
+        <span class="page-info">
+            Page {pagination.currentPage} of {pagination.totalPages}
+            <span class="total-count">({pagination.totalButtons} total)</span>
+        </span>
+        
+        {pagination.hasNextPage && (
+            <a href={`?page=${pagination.nextPage}`} class="pagination-link">Next</a>
+        )}
+    </div>
+</div>
+
+<style>
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem 1rem;
+    }
+    
+    .pagination {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+    }
+    
+    .pagination-link {
+        padding: 0.25rem 0.5rem;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        text-decoration: none;
+    }
+    
+    .pagination-link:hover {
+        background-color: #f0f0f0;
+    }
+    
+    .total-count {
+        font-size: 0.8rem;
+        color: #666;
+        margin-left: 0.5rem;
+    }
+</style>
 <div class="button-container">
 	{
-		buttons.map((button: any) => (
+		buttons.buttons.map((button: any) => (
 			<Button
 				src={button.src}
 				image={button.image}
