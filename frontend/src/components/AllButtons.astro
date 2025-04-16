@@ -4,7 +4,7 @@ import Button from "./Button.astro";
 const baseUrl = Astro.url.origin;
 
 const response = await fetch(
-	new URL(Astro.url.origin + "/api/allButtons").href,
+	new URL(Astro.url.origin + `/api/allButtons?q=${Astro.url.searchParams.get("q") || 0}`).href,
 	{
 		method: "GET",
 		headers: {

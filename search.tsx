@@ -55,7 +55,13 @@ Bun.serve({
 		},
 		"/retrieveAllButtons": async (req) => {
 			const buttons = await db.retrieveAllButtons();
-			return new Response(JSON.stringify(buttons), {
+			const url = new URL(req.url);
+			const page = parseInt(url.searchParams.get("page") || "1");
+			const pageSize = 100;
+			const start = (page - 1) * pageSize;
+			const end = start + pageSize;
+			const paginatedButtons = buttons.slice(start, end);
+			return new Response(JSON.stringify(paginatedButtons), {
 				headers: {
 					"Content-Type": "application/json",
 				},
