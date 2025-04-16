@@ -31,7 +31,7 @@ const { src, alt, links_to, image } = Astro.props;
 		src={image && image.data
 			? image.type === 'image/svg+xml' 
 				? `data:${image.type};charset=utf-8,${encodeURIComponent(new TextDecoder().decode(new Uint8Array(image.data)))}`
-				: `data:${image.type};base64,${btoa(String.fromCharCode.apply(null, image.data))}`
+				: `data:${image.type};base64,${Buffer.from(image.data).toString('base64')}`
 			: src}
 		alt={alt}
 		class="button-image"
