@@ -244,19 +244,3 @@ Bun.serve({
 	},
 	port: process.env.SEARCH_PORT || 8000,
 });
-
-fetch("http://localhost:8000/buttonSearchColor?q=blue&color=true&rainbow=false")
-	.then((response) => response.json())
-	.then((data) => {
-		// Just log the color similarity data
-		if (data.buttons && Array.isArray(data.buttons)) {
-			data.buttons.forEach((element: {title: string, avg_color: string, distance: number}) => {
-				console.log(`Title: ${element.title}, Color: ${element.avg_color}, Similarity Distance: ${element.distance}`);
-			});
-		} else {
-			console.log("No buttons data found");
-		}
-	})
-	.catch((error) => {
-		console.error("Error fetching button search:", error);
-	});

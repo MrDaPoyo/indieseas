@@ -98,7 +98,7 @@ const queryMessage = query
 		{
 			pagination.hasPreviousPage && (
 				<a
-					href={`?page=${pagination.previousPage}`}
+					href={`?page=${pagination.previousPage}&q=${query}&color=${Astro.url.searchParams.get("color")}`}
 					class="pagination-link"
 				>
 					Previous
@@ -114,7 +114,7 @@ const queryMessage = query
 		{
 			pagination.hasNextPage && (
 				<a
-					href={`?page=${pagination.nextPage}`}
+				href={`?page=${pagination.nextPage}&q=${query}&color=${Astro.url.searchParams.get("color")}`}
 					class="pagination-link"
 				>
 					Next
