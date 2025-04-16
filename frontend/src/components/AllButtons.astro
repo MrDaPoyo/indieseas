@@ -139,14 +139,17 @@ const queryMessage = query
 			</select>
 		</div>
 
-		<script>
+		<script defer>
 			document.getElementById('color-select').addEventListener('change', function() {
 				const color = this.value;
 				const currentUrl = new URL(window.location.href);
 				const currentPage = currentUrl.searchParams.get('page') || '1';
+				const existingQuery = currentUrl.searchParams.get('q');
 				
 				if (color) {
 					window.location.href = `/buttons?color=true&q=${color}&page=${currentPage}`;
+				} else if (existingQuery && existingQuery !== color) {
+					window.location.href = `/buttons?q=${existingQuery}&page=${currentPage}`;
 				} else {
 					window.location.href = `/buttons?page=${currentPage}`;
 				}
