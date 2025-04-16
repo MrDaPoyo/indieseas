@@ -13,7 +13,7 @@ export function retrieveAllButtons() {
 	try {
 		return db.query.buttons.findMany();
 	} catch (error) {
-		return {};
+		return null;
 	}
 }
 
@@ -51,6 +51,18 @@ export async function insertButton(button: schema.Button, website_id: number) {
 		}
 	}
 }
+
+export function updateButtonColor(id: number, color: any) {
+	try {
+		return db
+			.update(schema.buttons)
+			.set({ avg_color: color })
+			.where(eq(schema.buttons.id, id));
+	} catch (error) {
+		return false;
+	}
+}
+
 
 export function retrieveAllScrapedURLs() {
 	try {

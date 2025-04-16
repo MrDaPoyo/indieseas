@@ -30,6 +30,7 @@
     "image-size": "^2.0.1",
     "jsdom": "^26.0.0",
     "puppeteer": "^24.6.0",
-    "server": "react-dom/server"
+    "server": "react-dom/server",
+    "sharp": "^0.34.1"
   }
 }

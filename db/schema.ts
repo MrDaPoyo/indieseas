@@ -1,3 +1,4 @@
+import { avg } from "drizzle-orm";
 import {
 	pgTable,
 	text,
@@ -40,6 +41,7 @@ export const buttons = pgTable("buttons", {
 	src: text().notNull(),
 	alt: text(),
 	links_to: text(),
+	avg_color: text().notNull().default("#000000"),
 });
 
 export const visitedURLs = pgTable("visitedURLs", {

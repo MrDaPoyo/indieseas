@@ -3,7 +3,8 @@ import { imageSize } from "image-size";
 import { sleep } from "bun";
 import * as cheerio from "cheerio";
 import customFetch from "./utils/fetch";
-import { checkRobotsTxt } from "./utils/checkRobotsTxt"
+import { checkRobotsTxt } from "./utils/checkRobotsTxt";
+import { getAverageColor } from "./utils/colorizeButton";
 
 export type Button = {
 	id?: number;
@@ -18,6 +19,7 @@ export type Button = {
 	height?: number;
 	width?: number;
 	alt?: string | null;
+	avg_color?: string | null;
 };
 
 function getImageSize(buffer: Buffer): { width: number; height: number } {
@@ -286,6 +288,7 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 										height: height,
 										width: width,
 										alt: (btn as any).alt || null,
+										avg_color: await getAverageColor(buffer),
 									});
 								} catch (error) {
 									console.error(`Error processing button ${url}:`, error);
