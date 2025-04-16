@@ -103,29 +103,51 @@ Bun.serve({
 			const url = new URL(req.url);
 			const rainbowFilter = url.searchParams.get("rainbow") === "true";
 			const query = decodeURIComponent(url.searchParams.get("q") || "");
-			if (!query) {
-				return new Response("No query provided", { status: 400 });
+			const colorQuery = decodeURIComponent(url.searchParams.get("color") || "");
+			const maxDistance = parseFloat(url.searchParams.get("maxDistance") || "20");
+			const page = parseInt(url.searchParams.get("page") || "1");
+			const pageSize = parseInt(url.searchParams.get("pageSize") || "200");
+			
+			if (!query && !colorQuery) {
+				return new Response("No query or color provided", { status: 400 });
 			}
 			
 			const buttons = await db.retrieveAllButtons();
-			if (!buttons) return new Response("No buttons found", { status: 404 });
+			if (!buttons || buttons.length === 0) {
+				return new Response("No buttons found", { status: 404 });
+			}
 			
-			const filteredButtons = buttons.filter((button: any) => {
+			let filteredButtons = [...buttons];
+			
+			// Filter by text query if provided
+			if (query) {
 				const query_lower = query.toLowerCase();
-				return (
+				filteredButtons = filteredButtons.filter((button: any) => (
 					(button.title?.toLowerCase().includes(query_lower)) ||
 					(button.alt?.toLowerCase().includes(query_lower)) ||
 					(button.links_to?.toLowerCase().includes(query_lower)) ||
 					(button.found_url?.toLowerCase().includes(query_lower))
-				);
-			});
-
-			const page = parseInt(url.searchParams.get("page") || "1");
-			const pageSize = parseInt(url.searchParams.get("pageSize") || "200");
+				));
+			}
 			
-			let sortedButtons = [...filteredButtons];
-			if (rainbowFilter) {
-				sortedButtons.sort((a, b) => {
+			// Filter and sort by color if provided
+			if (colorQuery) {
+				const queryColor = Bun.color(colorQuery, "[rgb]") || null;
+				
+				if (queryColor) {
+					filteredButtons = filteredButtons.filter(button => button.avg_color);
+					filteredButtons = filteredButtons.map(button => {
+						const colorComponents = Bun.color(button.avg_color, "[rgb]") || [0, 0, 0];
+						if (colorComponents.length !== 3) return { ...button, distance: Infinity };
+						const distance = deltaE(queryColor, colorComponents);
+						return { ...button, distance };
+					}).filter(button => button.distance < maxDistance)
+						.sort((a, b) => a.distance - b.distance);
+				}
+			}
+			// Apply rainbow sort if no color query but rainbow filter is on
+			else if (rainbowFilter) {
+				filteredButtons.sort((a, b) => {
 					if (!a.avg_color && !b.avg_color) return 0;
 					if (!a.avg_color) return 1;
 					if (!b.avg_color) return -1;
@@ -133,13 +155,13 @@ Bun.serve({
 				});
 			}
 
-			const totalButtons = sortedButtons.length;
+			const totalButtons = filteredButtons.length;
 			const totalPages = Math.ceil(totalButtons / pageSize);
 			const validPage = Math.max(1, Math.min(page, totalPages || 1));
 			const start = (validPage - 1) * pageSize;
 			const end = start + pageSize;
 			
-			const paginatedButtons = sortedButtons.slice(start, end);
+			const paginatedButtons = filteredButtons.slice(start, end);
 			const hasNextPage = validPage < totalPages;
 			const hasPreviousPage = validPage > 1;
 
@@ -160,28 +182,8 @@ Bun.serve({
 					"Content-Type": "application/json",
 				},
 			});
-		},
-		"/buttonSearchColor": async (req) => {
-			const url = new URL(req.url);
-			const query = decodeURIComponent(url.searchParams.get("q") || "");
-			if (!query) {
-				return new Response("No query provided", { status: 400 });
-			}
-			const buttons = await db.retrieveAllButtons();
-			if (!buttons) return new Response("No buttons found", { status: 404 });
-
-			const queryColor = Bun.color(query, "[rgb]") || null;
-			const maxDistance = parseFloat(url.searchParams.get("maxDistance") || "20");
-
-			const buttonsWithColors = buttons.filter(button => button.avg_color);
-			const sortedButtons = buttonsWithColors.map(button => {
-				const colorComponents = Bun.color(button.avg_color, "[rgb]") || [0, 0, 0];
-				if (colorComponents.length !== 3) return { ...button, distance: Infinity };
-				const distance = deltaE(queryColor, colorComponents);
-				return { ...button, distance };
-			}).filter(button => button.distance < maxDistance)
-				.sort((a, b) => a.distance - b.distance);
-
+			
+			// Color distance calculation functions
 			function deltaE(rgbA: number[], rgbB: number[]): number {
 				let labA = rgb2lab(rgbA);
 				let labB = rgb2lab(rgbB);
@@ -215,36 +217,6 @@ Bun.serve({
 				z = (z > 0.008856) ? Math.pow(z, 1 / 3) : (7.787 * z) + 16 / 116;
 				return [(116 * y) - 16, 500 * (x - y), 200 * (y - z)]
 			}
-
-			const page = parseInt(url.searchParams.get("page") || "1");
-			const pageSize = parseInt(url.searchParams.get("pageSize") || "200");
-			const totalButtons = sortedButtons.length;
-			const totalPages = Math.ceil(totalButtons / pageSize);
-			const validPage = Math.max(1, Math.min(page, totalPages || 1));
-			const start = (validPage - 1) * pageSize;
-			const end = start + pageSize;
-			
-			const paginatedButtons = sortedButtons.slice(start, end);
-			const hasNextPage = validPage < totalPages;
-			const hasPreviousPage = validPage > 1;
-
-			return new Response(JSON.stringify({
-				buttons: paginatedButtons,
-				pagination: {
-					currentPage: validPage,
-					totalPages,
-					totalButtons,
-					hasNextPage,
-					hasPreviousPage,
-					nextPage: hasNextPage ? validPage + 1 : null,
-					previousPage: hasPreviousPage ? validPage - 1 : null,
-					pageSize
-				}
-			}), {
-				headers: {
-					"Content-Type": "application/json",
-				},
-			});
 		}
 	},
 	port: process.env.SEARCH_PORT || 8000,
