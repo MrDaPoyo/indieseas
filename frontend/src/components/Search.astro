@@ -31,6 +31,32 @@ const results = await response.json();
 const metadata = await results.results.metadata;
 const time = await metadata.time || 0;
 const resultList = await results.results.results || [];
+
+let voteResults;
+
+if (Astro.request.method == "POST") {
+    const body = await Astro.request.formData();
+    if (query) {
+        const targetUrl = new URL(Astro.url.origin + "/api/vote").href;
+        const response = await fetch(targetUrl, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                vote: body.get("website_id"),
+                ip: Astro.clientAddress,
+            }),
+        });
+        if (!response.ok) {
+            throw new Error(
+                `Error casting vote: ${response.statusText} (${response.status})`
+            );
+        }
+        voteResults = await response.json();
+    }
+}
+
 ---
 
 <>
@@ -56,6 +82,7 @@ const resultList = await results.results.results || [];
             }
         </style>
 	</div>
+    {voteResults?.message}
 	<hr style="margin-top: 0;"/>
 	<div id="results">
         <style>
@@ -82,9 +109,14 @@ const resultList = await results.results.results || [];
                 <p>Found {metadata?.finalCount || 0} results out of {metadata?.originalDbCount || 0} possible results for "{query}" in {time.toFixed(4)} miliseconds.</p>
                 {
                     resultList
-                        .map((result: { website: string, title?: string, description?: string, total_similarity: number, score?: number, matched_types_list: any}) => (
+                        .map((result: { website_id: number, website: string, title?: string, description?: string, total_similarity: number, score?: number, matched_types_list: any}) => (
                             <div class="result">
+                                {JSON.stringify(result)}
                                 <span style="display: inline-flex; flex-direction: row; justify-content: start; align-items: center;">
+                                    <form method="POST">
+                                        <input type="hidden" name="website_id" value={result.website_id} />
+                                        <button type="submit" style="background: none; border: none; color: gold; cursor: pointer; padding: 0; margin: 0 5px 0 0;">★</button>
+                                    </form>
                                     <a href={result.website} target="_blank">
                                         <h2>{result.title || result.website}</h2>
                                     </a>

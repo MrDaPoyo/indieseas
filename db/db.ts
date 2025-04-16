@@ -352,6 +352,56 @@ export async function retrieveRandomWebsite() {
 	}
 }
 
+export async function castVote(website_id: number, ip: string) {
+	try {
+
+		const existing = await db.query.buttons.findFirst({
+			where: eq(schema.scrapedURLs.url_id, website_id),
+		});
+
+		if (existing) {
+			await db
+				.insert(schema.votes)
+				.values({ ip: ip, website_id: existing.id })
+			return true;
+		}
+		return false;
+	} catch (error) {
+		return false;
+	}
+}
+
+export async function cowardyVote(id: number) {
+	try {
+		const existing = await db.query.votes.findFirst({
+			where: eq(schema.votes.id, id),
+		});
+
+		if (existing) {
+			await db.delete(schema.votes).where(eq(schema.votes.id, id));
+			return true;
+		}
+		return false;
+	} catch (error) {
+		return false;
+	}
+}
+
+export async function retrieveVotes(website_id: number) {
+	try {
+		const existing = await db.query.votes.findMany({
+			where: eq(schema.votes.website_id, website_id),
+		});
+
+		if (existing) {
+			return existing;
+		}
+		return false;
+	} catch (error) {
+		return false;
+	}
+}
+
 const KNN_CANDIDATE_LIMIT = 150; // How many nearest neighbors to fetch initially (e.g., 3x final limit)
 const FINAL_RESULT_LIMIT = 150;
 const MIN_RELEVANCE_THRESHOLD = 0.75; // Minimum acceptable aggregated similarity score (adjust 0.0 to 1.0)
@@ -405,81 +455,83 @@ export async function search(query: string) {
 		// This query first finds the nearest neighbors using the index,
 		// then calculates weighted similarity, aggregates per website,
 		// and finally joins with visitedURLs.
-        const results = await db.execute(sql`
-            WITH nearest_matches AS (
-                -- Step 1: Find K nearest *individual* embeddings using the HNSW index
-                SELECT
-                    id,
-                    website,
-                    type,
-                    embedding <=> ${vectorString}::vector AS distance -- $1 (vector)
-                FROM ${schema.websitesIndex}
-                ORDER BY
-                    distance ASC
-                LIMIT ${KNN_CANDIDATE_LIMIT}::integer -- $2 (Explicitly integer)
-            ),
-            similarity_scores AS (
-                -- Step 2: Calculate similarity and apply weights to the candidates
-                SELECT
-                    website,
-                    type,
-                    1 - distance AS similarity,
-                    CASE type
-                        WHEN 'title' THEN (1 - distance) * ${TITLE_WEIGHT}::float -- $3 (Explicitly float)
-                        WHEN 'description' THEN (1 - distance) * ${DESCRIPTION_WEIGHT}::float -- $4 (Explicitly float)
-                        WHEN 'corpus' THEN (1 - distance) * ${CORPUS_WEIGHT}::float -- $5 (Explicitly float)
-                        ELSE (1 - distance)
-                    END AS weighted_similarity
-                FROM nearest_matches
-                WHERE website IS NOT NULL
-            ),
-            aggregated_scores AS (
-                -- Step 3: Aggregate scores per website
-                SELECT
-                    website,
-                    SUM(weighted_similarity) as total_similarity,
-                    COUNT(DISTINCT type) as matched_types_count,
-                    ARRAY_AGG(DISTINCT type) as matched_types_list
-                FROM similarity_scores
-                GROUP BY website
-            )
-            -- Step 4: Join with visitedURLs to get metadata and apply final ordering/limit
-            SELECT
-                ag.website,
-                ag.total_similarity,
-                ag.matched_types_count,
-                ag.matched_types_list,
-                vu.title,
-                vu.description,
-                vu.amount_of_buttons
-            FROM aggregated_scores ag
-            JOIN ${schema.visitedURLs} vu ON ag.website = vu.path
-            ORDER BY
-                ag.total_similarity DESC
-            LIMIT ${FINAL_RESULT_LIMIT}::integer; -- $6 (Explicitly integer)
-        `);
+		const results = await db.execute(sql`
+			WITH nearest_matches AS (
+				-- Step 1: Find K nearest *individual* embeddings using the HNSW index
+				SELECT
+					id,
+					website,
+					type,
+					embedding <=> ${vectorString}::vector AS distance -- $1 (vector)
+				FROM ${schema.websitesIndex}
+				ORDER BY
+					distance ASC
+				LIMIT ${KNN_CANDIDATE_LIMIT}::integer -- $2 (Explicitly integer)
+			),
+			similarity_scores AS (
+				-- Step 2: Calculate similarity and apply weights to the candidates
+				SELECT
+					website,
+					type,
+					1 - distance AS similarity,
+					CASE type
+						WHEN 'title' THEN (1 - distance) * ${TITLE_WEIGHT}::float -- $3 (Explicitly float)
+						WHEN 'description' THEN (1 - distance) * ${DESCRIPTION_WEIGHT}::float -- $4 (Explicitly float)
+						WHEN 'corpus' THEN (1 - distance) * ${CORPUS_WEIGHT}::float -- $5 (Explicitly float)
+						ELSE (1 - distance)
+					END AS weighted_similarity
+				FROM nearest_matches
+				WHERE website IS NOT NULL
+			),
+			aggregated_scores AS (
+				-- Step 3: Aggregate scores per website
+				SELECT
+					website,
+					SUM(weighted_similarity) as total_similarity,
+					COUNT(DISTINCT type) as matched_types_count,
+					ARRAY_AGG(DISTINCT type) as matched_types_list
+				FROM similarity_scores
+				GROUP BY website
+			)
+			-- Step 4: Join with visitedURLs to get metadata and apply final ordering/limit
+			SELECT
+				ag.website,
+				ag.total_similarity,
+				ag.matched_types_count,
+				ag.matched_types_list,
+				vu.title,
+				vu.description,
+				vu.amount_of_buttons,
+				vu.url_id
+			FROM aggregated_scores ag
+			JOIN ${schema.visitedURLs} vu ON ag.website = vu.path
+			ORDER BY
+				ag.total_similarity DESC
+			LIMIT ${FINAL_RESULT_LIMIT}::integer; -- $6 (Explicitly integer)
+		`);
 
-        const queryTime = performance.now() - timer;
+		const queryTime = performance.now() - timer;
 
-        const filteredResults = results.rows.filter(row =>
-            row.total_similarity != null && // Check for null/undefined
-            row.total_similarity as number >= MIN_RELEVANCE_THRESHOLD &&
-            row.title != null && // Ensure we have a title to display
-            typeof row.title === 'string' && // Type guard
-            row.title.trim() !== '' // Ensure title isn't empty
-        );
+		const filteredResults = results.rows.filter(row =>
+			row.total_similarity != null && // Check for null/undefined
+			row.total_similarity as number >= MIN_RELEVANCE_THRESHOLD &&
+			row.title != null && // Ensure we have a title to display
+			typeof row.title === 'string' && // Type guard
+			row.title.trim() !== '' // Ensure title isn't empty
+		);
 
-        // 4. Format Output
-        const finalOutput = filteredResults.map(row => ({
-            website: row.website,
-            title: row.title,
-            description: row.description,
-            amount_of_buttons: row.amount_of_buttons,
-            score: row.total_similarity, // The final relevance score
-            matched_types_count: row.matched_types_count,
-            matched_types_list: row.matched_types_list
-        }));
-		
+		// 4. Format Output
+		const finalOutput = filteredResults.map(row => ({
+			website: row.website,
+			title: row.title,
+			description: row.description,
+			amount_of_buttons: row.amount_of_buttons,
+			score: row.total_similarity, // The final relevance score
+			matched_types_count: row.matched_types_count,
+			matched_types_list: row.matched_types_list,
+			website_id: row.url_id
+		}));
+
 		const finalResults = {
 			results: finalOutput,
             metadata: {

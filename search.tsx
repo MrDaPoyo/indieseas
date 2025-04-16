@@ -255,7 +255,47 @@ Bun.serve({
 					"Content-Type": "application/json",
 				},
 			});
-		}
+		},
+		"/castVote": async (req) => {
+			const url = new URL(req.url);
+			const websiteId = parseInt(decodeURIComponent(url.searchParams.get("website_id") || ""));
+			const ip = url.searchParams.get("ip") || "";
+			if (!websiteId || !ip) {
+				return new Response("No website ID or IP provided", { status: 400 });
+			}
+			const result = await db.castVote(websiteId, ip);
+			return new Response(JSON.stringify(result), {
+				headers: {
+					"Content-Type": "application/json",
+				},
+			});
+		},
+		"/removeVote": async (req) => {
+			const url = new URL(req.url);
+			const voteId = parseInt(url.searchParams.get("vote_id") || "");
+			if (!voteId) {
+				return new Response("No vote ID provided", { status: 400 });
+			}
+			const result = await db.cowardyVote(voteId);
+			return new Response(JSON.stringify(result), {
+				headers: {
+					"Content-Type": "application/json",
+				},
+			});
+		},
+		"/retrieveVotes": async (req) => {
+			const url = new URL(req.url);
+			const websiteId = parseInt(url.searchParams.get("website_id") || "");
+			if (!websiteId) {
+				return new Response("No website ID provided", { status: 400 });
+			}
+			const result = await db.retrieveVotes(websiteId);
+			return new Response(JSON.stringify(result), {
+				headers: {
+					"Content-Type": "application/json",
+				},
+			});
+		},
 	},
 	port: process.env.SEARCH_PORT || 8000,
 });

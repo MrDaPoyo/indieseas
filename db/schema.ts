@@ -1,5 +1,6 @@
 import { avg } from "drizzle-orm";
 import {
+	uniqueIndex,
 	pgTable,
 	text,
 	integer,
@@ -67,6 +68,25 @@ export const websitesIndex = pgTable(
 			table.embedding.op("vector_cosine_ops")
 		),
 	]
+);
+
+export const votes = pgTable(
+	"votes",
+	{
+		id: serial().primaryKey(),
+		website_id: integer("website_id")
+			.references(() => websitesIndex.id, { onDelete: "cascade" })
+			.notNull(),
+		ip: text().notNull(),
+	},
+	(table) => {
+		return {
+			uniqueVote: uniqueIndex("unique_vote_idx").on(
+				table.website_id,
+				table.ip
+			),
+		};
+	}
 );
 
 export const visitedURLsRelations = pgTable("visitedURLs_relations", {
