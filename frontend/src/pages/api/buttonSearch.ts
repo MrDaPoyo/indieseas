@@ -16,7 +16,7 @@ export const GET: APIRoute = async (request) => {
         }
 
         const response = await fetch(
-            `http://localhost:8000/buttonSearch?q=${encodeURIComponent(query)}`
+            `http://localhost:8000/buttonSearch?q=${encodeURIComponent(query)}&rainbow=${request.url.searchParams.get("rainbow") == "true" ? "true" : "false"}`,
         );
         if (!response.ok) {
             return new Response(

@@ -3,7 +3,7 @@ import type { APIRoute } from "astro";
 export const GET: APIRoute = async (request) => {
     try {
         const response = await fetch(
-            `http://localhost:8000/retrieveAllButtons?page=${request.url.searchParams.get("page") || 1}`,
+            `http://localhost:8000/retrieveAllButtons?page=${request.url.searchParams.get("page") || 1}&rainbow=${request.url.searchParams.get("rainbow") || false}`,
         );
         if (!response.ok) {
             return new Response(

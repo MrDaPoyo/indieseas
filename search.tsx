@@ -56,11 +56,24 @@ Bun.serve({
 		"/retrieveAllButtons": async (req) => {
 			const buttons = await db.retrieveAllButtons();
 			const url = new URL(req.url);
+			const rainbowFilter = true;
 			const page = parseInt(url.searchParams.get("page") || "1");
 			const pageSize = 100;
 			const start = (page - 1) * pageSize;
 			const end = start + pageSize;
-			const paginatedButtons = buttons.slice(start, end);
+			
+			let sortedButtons = [...buttons];
+			if (rainbowFilter) {
+				console.log("Sorting buttons by rainbow filter");
+				sortedButtons.sort((a, b) => {
+					if (!a.avg_color && !b.avg_color) return 0;
+					if (!a.avg_color) return 1;
+					if (!b.avg_color) return -1;
+					return a.avg_color.localeCompare(b.avg_color);
+				});
+			}
+			
+			let paginatedButtons = sortedButtons.slice(start, end);
 			
 			const totalButtons = buttons.length;
 			const totalPages = Math.ceil(totalButtons / pageSize);
@@ -86,6 +99,7 @@ Bun.serve({
 		},
 		"/buttonSearch": async (req) => {
 			const url = new URL(req.url);
+			const rainbowFilter = url.searchParams.get("rainbow") == "true";
 			const query = decodeURIComponent(url.searchParams.get("q") || "");
 			if (!query) {
 				return new Response("No query provided", { status: 400 });
@@ -103,16 +117,31 @@ Bun.serve({
 			});
 			
 			const page = parseInt(url.searchParams.get("page") || "1");
-			const pageSize = 100;
+			const pageSize = 200;
 			const start = (page - 1) * pageSize;
 			const end = start + pageSize;
-			const paginatedButtons = filteredButtons.slice(start, end);
+			let paginatedButtons = filteredButtons.slice(start, end);
 			
 			const totalButtons = filteredButtons.length;
 			const totalPages = Math.ceil(totalButtons / pageSize);
 			const hasNextPage = page < totalPages;
 			const hasPreviousPage = page > 1;
-			
+
+
+			let sortedButtons = [...filteredButtons];
+			if (rainbowFilter) {
+				sortedButtons.sort((a, b) => {
+					if (!a.avg_color && !b.avg_color) return 0;
+					if (!a.avg_color) return 1;
+					if (!b.avg_color) return -1;
+					return a.avg_color.localeCompare(b.avg_color);
+				});
+				paginatedButtons = sortedButtons.slice(start, end);
+			} else {
+				paginatedButtons = filteredButtons.slice(start, end);
+			}
+
+		
 			return new Response(JSON.stringify({
 				buttons: paginatedButtons,
 				pagination: {
