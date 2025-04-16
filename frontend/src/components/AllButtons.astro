@@ -61,6 +61,10 @@ if (query && query.trim() !== "") {
 	buttonsList = buttons.buttons || [];
 	pagination = buttons.pagination;
 }
+
+const queryMessage = query
+	? `Found ${pagination.totalButtons} buttons for "${query}"!`
+	: `Found ${pagination.totalButtons} buttons!`;
 ---
 
 <div class="header">
@@ -85,7 +89,7 @@ if (query && query.trim() !== "") {
 <hr style="margin-top: 0;" />
 <div class="pagination-container">
 	<span>
-		<p>Found {pagination.totalButtons} buttons for "{query}"!</p>
+		<p>{queryMessage}</p>
 	</span>
 
 	<div class="pagination">
