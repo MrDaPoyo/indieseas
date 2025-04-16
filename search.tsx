@@ -216,14 +216,24 @@ Bun.serve({
 				return [(116 * y) - 16, 500 * (x - y), 200 * (y - z)]
 			}
 
-			const page = parseInt(url.searchParams.get("page") || "1");
-			const pageSize = parseInt(url.searchParams.get("pageSize") || "200");
+			let page = parseInt(url.searchParams.get("page") || "1");
+			let pageSize = parseInt(url.searchParams.get("pageSize") || "200");
+
+			if (isNaN(page) || page < 1) {
+				page = 1; // Default to page 1 if invalid
+			}
+			if (isNaN(pageSize) || pageSize < 1) {
+				pageSize = 200; // Default to 200 if invalid or non-positive
+			}
+			const safePageSize = Math.max(1, pageSize);
+
 			const totalButtons = sortedButtons.length;
-			const totalPages = Math.ceil(totalButtons / pageSize);
+			const totalPages = Math.ceil(totalButtons / safePageSize);
+			// Ensure page is within valid range (1 to totalPages)
 			const validPage = Math.max(1, Math.min(page, totalPages || 1));
-			const start = (validPage - 1) * pageSize;
-			const end = start + pageSize;
-			
+			const start = (validPage - 1) * safePageSize;
+			const end = start + safePageSize;
+
 			const paginatedButtons = sortedButtons.slice(start, end);
 			const hasNextPage = validPage < totalPages;
 			const hasPreviousPage = validPage > 1;
