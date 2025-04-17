@@ -14,9 +14,9 @@ const urlpathname = Astro.props.buttonSearch ? "/buttonSearch" : "/search";
 		autocomplete="off"
 	/>
 	<button type="submit">Search</button>
-	<script>
+	<script defer>
 		const form = document.querySelector("form");
-		form?.addEventListener("submit", (e) => {
+		form.addEventListener("submit", (e) => {
 			e.preventDefault();
 			const input = document.querySelector("#search") as HTMLInputElement;
 			if ((input && input.value.trim() == "") || input.value == null) {

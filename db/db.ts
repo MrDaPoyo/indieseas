@@ -17,6 +17,43 @@ export function retrieveAllButtons() {
 	}
 }
 
+
+export async function retrievePagedButtons(
+	page: number = 1,
+	pageSize: number = 200,
+) {
+	const offset = (page - 1) * pageSize;
+	const limit = pageSize;
+
+	// get total count for pagination info that ill later return in "pagination"
+	const totalCountResult = await db.select({ count: sql<number>`count(*)` }).from(schema.buttons);
+	const totalCount = totalCountResult[0].count;
+	const totalPages = Math.ceil(totalCount / pageSize);
+
+	const buttons = await db.query.buttons.findMany({
+		limit: limit,
+		offset: offset,
+	});
+
+	const hasNextPage = page < totalPages;
+	const hasPreviousPage = page > 1;
+	const validPage = page;
+
+	return {
+		buttons,
+		pagination: {
+			currentPage: validPage,
+			totalPages,
+			totalButtons: totalCount,
+			hasNextPage,
+			hasPreviousPage,
+			nextPage: hasNextPage ? validPage + 1 : null,
+			previousPage: hasPreviousPage ? validPage - 1 : null,
+			pageSize
+		}
+	};
+}
+
 export async function insertButton(button: schema.Button, website_id: number) {
 	try {
 		console.log(await db.insert(schema.buttons).values(button).returning());

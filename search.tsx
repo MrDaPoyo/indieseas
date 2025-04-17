@@ -54,13 +54,14 @@ Bun.serve({
 			});
 		},
 		"/retrieveAllButtons": async (req) => {
-			const buttons = await db.retrieveAllButtons();
 			const url = new URL(req.url);
 			const rainbowFilter = url.searchParams.get("rainbow") === "true";
 			const page = parseInt(url.searchParams.get("page") || "1");
 			const pageSize = parseInt(url.searchParams.get("pageSize") || "100");
+			let buttons = await db.retrievePagedButtons(page, pageSize);
 			
-			let sortedButtons = [...buttons];
+			let pagination = buttons.pagination;
+			let sortedButtons = [...buttons.buttons];
 			if (rainbowFilter) {
 				console.log("Sorting buttons by rainbow filter");
 				sortedButtons.sort((a, b) => {
@@ -71,28 +72,9 @@ Bun.serve({
 				});
 			}
 
-			const totalButtons = sortedButtons.length;
-			const totalPages = Math.ceil(totalButtons / pageSize);
-			const validPage = Math.max(1, Math.min(page, totalPages || 1));
-			const start = (validPage - 1) * pageSize;
-			const end = start + pageSize;
-			
-			const paginatedButtons = sortedButtons.slice(start, end);
-			const hasNextPage = validPage < totalPages;
-			const hasPreviousPage = validPage > 1;
-
 			return new Response(JSON.stringify({
-				buttons: paginatedButtons,
-				pagination: {
-					currentPage: validPage,
-					totalPages,
-					totalButtons,
-					hasNextPage,
-					hasPreviousPage,
-					nextPage: hasNextPage ? validPage + 1 : null,
-					previousPage: hasPreviousPage ? validPage - 1 : null,
-					pageSize
-				}
+				buttons: sortedButtons,
+				pagination
 			}), {
 				headers: {
 					"Content-Type": "application/json",
@@ -255,47 +237,7 @@ Bun.serve({
 					"Content-Type": "application/json",
 				},
 			});
-		},
-		"/castVote": async (req) => {
-			const url = new URL(req.url);
-			const websiteId = parseInt(decodeURIComponent(url.searchParams.get("website_id") || ""));
-			const ip = url.searchParams.get("ip") || "";
-			if (!websiteId || !ip) {
-				return new Response("No website ID or IP provided", { status: 400 });
-			}
-			const result = await db.castVote(websiteId, ip);
-			return new Response(JSON.stringify(result), {
-				headers: {
-					"Content-Type": "application/json",
-				},
-			});
-		},
-		"/removeVote": async (req) => {
-			const url = new URL(req.url);
-			const voteId = parseInt(url.searchParams.get("vote_id") || "");
-			if (!voteId) {
-				return new Response("No vote ID provided", { status: 400 });
-			}
-			const result = await db.cowardyVote(voteId);
-			return new Response(JSON.stringify(result), {
-				headers: {
-					"Content-Type": "application/json",
-				},
-			});
-		},
-		"/retrieveVotes": async (req) => {
-			const url = new URL(req.url);
-			const websiteId = parseInt(url.searchParams.get("website_id") || "");
-			if (!websiteId) {
-				return new Response("No website ID provided", { status: 400 });
-			}
-			const result = await db.retrieveVotes(websiteId);
-			return new Response(JSON.stringify(result), {
-				headers: {
-					"Content-Type": "application/json",
-				},
-			});
-		},
+		}
 	},
 	port: process.env.SEARCH_PORT || 8000,
 });
