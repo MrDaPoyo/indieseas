@@ -7,6 +7,11 @@ const queryParam = Astro.url.searchParams.get("q");
 const query = queryParam ? decodeURIComponent(queryParam) : "";
 let results, pagination, buttonsList;
 
+const pageSize = Astro.cookies.get("page_size")?.value
+if (!pageSize) {
+	document.cookie = `page_size=200; path=/`;
+}
+
 if (query && query.trim() !== "") {
 	const isColorFilter = Astro.url.searchParams.get("color") == "true";
 	const colorParam = Astro.url.searchParams.get("q");
