@@ -7,10 +7,11 @@ const queryParam = Astro.url.searchParams.get("q");
 const query = queryParam ? decodeURIComponent(queryParam) : "";
 let results, pagination, buttonsList;
 
-const pageSize = Astro.cookies.get("page_size")?.value
+let pageSize = parseInt(Astro.cookies.get("page_size")?.value || "200");
 if (!pageSize) {
 	Astro.cookies.set("page_size", "200");
-}
+	pageSize = 200;
+} else pageSize = parseInt(Astro.cookies.get("page_size")?.value || "200");
 
 if (query && query.trim() !== "") {
 	const isColorFilter = Astro.url.searchParams.get("color") == "true";
@@ -19,7 +20,7 @@ if (query && query.trim() !== "") {
 	const targetUrl = 
 		new URL(Astro.url.origin + "/api/buttonSearch").href +
 		"?q=" + encodeURIComponent(query) + 
-		"&pageSize=" + (Astro.cookies.get('page_size')?.value || Astro.url.searchParams.get("pageSize") || '10') +
+		"&pageSize=" + (pageSize || Astro.url.searchParams.get("pageSize") || '10') +
 		(isColorFilter ? `&color=${encodeURIComponent(colorParam)}&page=${page}` : "");
 	
 	const buttonSearchResponse = await fetch(targetUrl, {
@@ -50,7 +51,7 @@ if (query && query.trim() !== "") {
 	const response = await fetch(
 		new URL(
 			Astro.url.origin +
-				`/api/allButtons?page=${Astro.url.searchParams.get("page") || 1}&pageSize=${Astro.url.searchParams.get("pageSize")}`
+				`/api/allButtons?page=${Astro.url.searchParams.get("page") || 1}&pageSize=${pageSize || Astro.url.searchParams.get("pageSize")}`
 		).href,
 		{
 			method: "GET",
