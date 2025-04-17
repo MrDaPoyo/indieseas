@@ -30,15 +30,10 @@ const urlpathname = Astro.props.buttonSearch ? "/buttons" : "/search";
 
 			if (url.searchParams.has("color")) url.searchParams.delete("color");
 
-			url.pathname = document.getElementById("typeOfSearch").textContent;
-
-			url.searchParams.append(
-				"q",
-				encodeURIComponent(input.value.trim())
-			);
+			const new_url = url.hostname + document.getElementById("typeOfSearch").textContent + "?q=" + encodeURIComponent(input.value.trim())
 
 			if (input && input.value.trim() !== "") {
-				window.location.href = url.href;
+				window.location.url = new_url;
 			}
 		});
 	</script>
