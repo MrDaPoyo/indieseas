@@ -9,7 +9,7 @@ let results, pagination, buttonsList;
 
 const pageSize = Astro.cookies.get("page_size")?.value
 if (!pageSize) {
-	document.cookie = `page_size=200; path=/`;
+	Astro.cookies.set("page_size", "200");
 }
 
 if (query && query.trim() !== "") {
