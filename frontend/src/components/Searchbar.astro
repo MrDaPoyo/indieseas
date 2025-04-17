@@ -33,7 +33,7 @@ const urlpathname = Astro.props.buttonSearch ? "/buttons" : "/search";
 			const new_url = url.hostname + document.getElementById("typeOfSearch").textContent + "?q=" + encodeURIComponent(input.value.trim())
 
 			if (input && input.value.trim() !== "") {
-				window.location.url = new_url;
+				window.location.href = new_url;
 			}
 		});
 	</script>
