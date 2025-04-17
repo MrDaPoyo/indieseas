@@ -7,11 +7,20 @@ const queryParam = Astro.url.searchParams.get("q");
 const query = queryParam ? decodeURIComponent(queryParam) : "";
 let results, pagination, buttonsList;
 
-let pageSize = parseInt(Astro.cookies.get("page_size")?.value || Astro.url.searchParams.get("pageSize") || "200");
-if (!pageSize) {
-	Astro.cookies.set("page_size", "200");
-	pageSize = 200;
-} else pageSize = parseInt(Astro.cookies.get("page_size")?.value || "200");
+let pageSize: number;
+const pageSizeParam = Astro.url.searchParams.get("pageSize");
+const pageSizeCookie = Astro.cookies.get("page_size")?.value;
+
+if (pageSizeParam) {
+	pageSize = parseInt(pageSizeParam);
+	// Update cookie if URL parameter is present
+	Astro.cookies.set("page_size", pageSize.toString());
+} else if (pageSizeCookie) {
+	pageSize = parseInt(pageSizeCookie);
+} else {
+	pageSize = 200; // Default value
+	Astro.cookies.set("page_size", "200"); // Set cookie to default
+}
 
 console.log("Page size:", pageSize);
 
