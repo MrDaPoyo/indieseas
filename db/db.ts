@@ -32,6 +32,11 @@ export async function retrievePagedButtons(
 	const totalPages = Math.ceil(totalCount / pageSize);
 
 	if (color) {
+		const totalCountResult = await db.select({ count: sql<number>`count(*)` }).from(schema.buttons).where(
+			eq(schema.buttons.color_tag, color));
+		const totalCount = totalCountResult[0].count;
+		const totalPages = Math.ceil(totalCount / pageSize);
+		
 		const buttons = await db.query.buttons.findMany({
 			where: eq(schema.buttons.color_tag, color),
 			limit: limit,
