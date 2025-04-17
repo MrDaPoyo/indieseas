@@ -120,7 +120,6 @@ export async function colorizeAllButtons() {
 						orange: [255, 165, 0],
 						black: [0, 0, 0],
 						white: [255, 255, 255],
-						gray: [128, 128, 128],
 						pink: [255, 192, 203],
 						brown: [165, 42, 42],
 					};

@@ -289,6 +289,7 @@ export async function scrapeEntireWebsite(url: string, website_id: number, maxPa
 										width: width,
 										alt: (btn as any).alt || null,
 										avg_color: await getAverageColor(buffer),
+										color_tag: 
 									});
 								} catch (error) {
 									console.error(`Error processing button ${url}:`, error);
