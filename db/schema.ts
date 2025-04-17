@@ -43,6 +43,7 @@ export const buttons = pgTable("buttons", {
 	alt: text(),
 	links_to: text(),
 	avg_color: text().notNull().default("#000000"),
+	color_tag: text().notNull().default("black"),
 });
 
 export const visitedURLs = pgTable("visitedURLs", {

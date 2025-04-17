@@ -21,6 +21,7 @@ export function retrieveAllButtons() {
 export async function retrievePagedButtons(
 	page: number = 1,
 	pageSize: number = 200,
+	color?: string,
 ) {
 	const offset = (page - 1) * pageSize;
 	const limit = pageSize;
@@ -29,6 +30,31 @@ export async function retrievePagedButtons(
 	const totalCountResult = await db.select({ count: sql<number>`count(*)` }).from(schema.buttons);
 	const totalCount = totalCountResult[0].count;
 	const totalPages = Math.ceil(totalCount / pageSize);
+
+	if (color) {
+		const buttons = await db.query.buttons.findMany({
+			where: eq(schema.buttons.color_tag, color),
+			limit: limit,
+			offset: offset,
+		});
+		const hasNextPage = page < totalPages;
+		const hasPreviousPage = page > 1;
+		const validPage = page;
+
+		return {
+			buttons,
+			pagination: {
+				currentPage: validPage,
+				totalPages,
+				totalButtons: totalCount,
+				hasNextPage,
+				hasPreviousPage,
+				nextPage: hasNextPage ? validPage + 1 : null,
+				previousPage: hasPreviousPage ? validPage - 1 : null,
+				pageSize
+			}
+		};
+	}
 
 	const buttons = await db.query.buttons.findMany({
 		limit: limit,
@@ -89,11 +115,11 @@ export async function insertButton(button: schema.Button, website_id: number) {
 	}
 }
 
-export function updateButtonColor(id: number, color: any) {
+export function updateButtonColor(id: number, color: any, color_tag: string) {
 	try {
 		return db
 			.update(schema.buttons)
-			.set({ avg_color: color })
+			.set({ avg_color: color, color_tag: color_tag })
 			.where(eq(schema.buttons.id, id));
 	} catch (error) {
 		return false;
