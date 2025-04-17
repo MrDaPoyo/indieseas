@@ -150,9 +150,9 @@ const queryMessage = query
 				
 				if (color == "") window.location.href = `/buttons?page=${currentPage}`;
 				else if (existingQuery && existingQuery !== color) {
-					window.location.href = `/buttons?color=true&q=${color}&page=${currentPage}`;
+					window.location.href = `/buttons?color=true&q=${color}`;
 				} else if (color) {
-					window.location.href = `/buttons?color=true&q=${color}&page=${currentPage}`;
+					window.location.href = `/buttons?color=true&q=${color}`;
 				} else if (existingQuery) {
 					window.location.href = `/buttons?q=${existingQuery}&page=${currentPage}`;
 				}
