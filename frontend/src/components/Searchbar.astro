@@ -28,7 +28,7 @@ const urlpathname = Astro.props.buttonSearch ? "/buttonSearch" : "/search";
 				url.searchParams.delete("q");
 			}
 
-			url.pathname = document.getElementById("typeOfSearch").value;
+			url.pathname = document.getElementById("typeOfSearch").textContent;
 
 			url.searchParams.append(
 				"q",
