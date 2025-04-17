@@ -112,7 +112,7 @@ import { ClientRouter, slide } from "astro:transitions";
 		flex-direction: row;
 	}
 
-	input[type="text"], input[type="url"] {
+	input[type="text"], input[type="url"], select {
 		margin-right: 0.25vw;
 		width: fit-content;
 		padding: 10px;
@@ -123,7 +123,7 @@ import { ClientRouter, slide } from "astro:transitions";
 		background-color: var(--background);
 		transition: 0.3s ease;
 	}
-	input[type="text"]:focus, input[type="url"]:active {
+	input[type="text"]:focus, input[type="url"]:active, select:active {
 		outline: none;
 		border-color: var(--secondary);
 	}
@@ -141,7 +141,7 @@ import { ClientRouter, slide } from "astro:transitions";
 		height: 100%;
 	}
 	button:hover,
-	input[type="submit"]:hover {
+	input[type="submit"]:hover, select:hover {
 		border-color: var(--secondary);
 	}
 </style>

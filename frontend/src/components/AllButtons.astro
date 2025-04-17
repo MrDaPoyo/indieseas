@@ -14,6 +14,7 @@ if (query && query.trim() !== "") {
 	const targetUrl = 
 		new URL(Astro.url.origin + "/api/buttonSearch").href +
 		"?q=" + encodeURIComponent(query) + 
+		"&pageSize=" + (Astro.cookies.get('page_size')?.value || Astro.url.searchParams.get("pageSize") || '10') +
 		(isColorFilter ? `&color=${encodeURIComponent(colorParam)}&page=${page}` : "");
 	
 	const buttonSearchResponse = await fetch(targetUrl, {
@@ -44,7 +45,7 @@ if (query && query.trim() !== "") {
 	const response = await fetch(
 		new URL(
 			Astro.url.origin +
-				`/api/allButtons?page=${Astro.url.searchParams.get("page") || 1}`
+				`/api/allButtons?page=${Astro.url.searchParams.get("page") || 1}&pageSize=${Astro.url.searchParams.get("pageSize")}`
 		).href,
 		{
 			method: "GET",
@@ -66,8 +67,8 @@ if (query && query.trim() !== "") {
 }
 
 const queryMessage = query
-	? `Found ${pagination.totalButtons} buttons for "${query}"!`
-	: `Found ${pagination.totalButtons} buttons!`;
+	? `Found ${buttonsList.length} buttons for "${query}"!`
+	: `Displaying ${buttonsList.length} buttons out of ${pagination.totalButtons} total!`;
 ---
 
 <div class="header">
@@ -124,7 +125,6 @@ const queryMessage = query
 		}
 
 		<div class="color-filter">
-			<label for="color-select">Filter by color:</label>
 			<select id="color-select" class="color-select">
 				<option value="">All colors</option>
 				<option value="red">Red</option>
@@ -138,6 +138,18 @@ const queryMessage = query
 				<option value="white">White</option>
 				<option value="pink">Pink</option>
 				<option value="brown">Brown</option>
+			</select>
+		</div>
+
+		<div class="pagination-select">
+			<select id="page-select" class="page-select" value={Astro.cookies.get("page_size")?.value || Astro.url.searchParams.get("pageSize") || 200}>
+				<option value="10">10</option>
+				<option value="50">50</option>
+				<option value="100">100</option>
+				<option value="200">200</option>
+				<option value="500">500</option>
+				<option value="1000">1000</option>
+				<option value="15000">Deadly</option>
 			</select>
 		</div>
 
@@ -158,22 +170,24 @@ const queryMessage = query
 					window.location.href = `/buttons?q=${existingQuery}&page=${currentPage}`;
 				}
 			});
-		</script>
 
-		<style>
-			.color-filter {
-				display: flex;
-				align-items: center;
-				gap: 0.5rem;
-				margin-left: auto;
-			}
-			
-			.color-select {
-				padding: 0.25rem;
-				border-radius: 4px;
-				border: 1px solid #ccc;
-			}
-		</style>
+			document.getElementById('page-select').value = new URL(window.location.href).searchParams.get('pageSize') || '10';
+			document.getElementById('page-select').addEventListener('change', function() {
+				const pageSize = this.value;
+				const currentUrl = new URL(window.location.href);
+				const currentPage = currentUrl.searchParams.get('page') || '1';
+				const existingQuery = currentUrl.searchParams.get('q');
+				
+				if (existingQuery) {
+					const currentUrl = new URL(window.location.href);
+					currentUrl.searchParams.set('pageSize', pageSize);
+					document.cookie = `page_size=${pageSize}; path=/`;
+					window.location.href = currentUrl.href;
+				} else {
+					window.location.href = `/buttons?page=${currentPage}&pageSize=${pageSize}`;
+				}
+			});
+		</script>
 	</div>
 </div>
 
@@ -219,6 +233,7 @@ const queryMessage = query
 		))
 	}
 </div>
+<p>Displaying {Astro.cookies.get("page_size")?.value} buttons per page</p>
 
 <style>
 	.button-container {

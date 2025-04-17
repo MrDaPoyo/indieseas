@@ -23,6 +23,8 @@ export const GET: APIRoute = async (request) => {
 					query
 				)}&color=true&page=${
 					url.searchParams.get("page") || 1
+				}&pageSize=${
+					url.searchParams.get("pageSize") || 200
 				}`
 			);
 			if (!response.ok) {
