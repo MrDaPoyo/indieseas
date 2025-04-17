@@ -7,11 +7,13 @@ const queryParam = Astro.url.searchParams.get("q");
 const query = queryParam ? decodeURIComponent(queryParam) : "";
 let results, pagination, buttonsList;
 
-let pageSize = parseInt(Astro.cookies.get("page_size")?.value || "200");
+let pageSize = parseInt(Astro.cookies.get("page_size")?.value || Astro.url.searchParams.get("pageSize") || "200");
 if (!pageSize) {
 	Astro.cookies.set("page_size", "200");
 	pageSize = 200;
 } else pageSize = parseInt(Astro.cookies.get("page_size")?.value || "200");
+
+console.log("Page size:", pageSize);
 
 if (query && query.trim() !== "") {
 	const isColorFilter = Astro.url.searchParams.get("color") == "true";
@@ -185,9 +187,9 @@ const queryMessage = query
 				const existingQuery = currentUrl.searchParams.get('q');
 				
 				if (existingQuery) {
+					document.cookie = `page_size=${pageSize}`;
 					const currentUrl = new URL(window.location.href);
 					currentUrl.searchParams.set('pageSize', pageSize);
-					document.cookie = `page_size=${pageSize}; path=/`;
 					window.location.href = currentUrl.href;
 				} else {
 					window.location.href = `/buttons?page=${currentPage}&pageSize=${pageSize}`;
