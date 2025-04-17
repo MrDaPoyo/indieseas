@@ -28,6 +28,8 @@ const urlpathname = Astro.props.buttonSearch ? "/buttons" : "/search";
 				url.searchParams.delete("q");
 			}
 
+			if (url.searchParams.has("color")) url.searchParams.delete("color");
+
 			url.pathname = document.getElementById("typeOfSearch").textContent;
 
 			url.searchParams.append(
