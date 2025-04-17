@@ -59,7 +59,7 @@ Bun.serve({
 			const page = parseInt(url.searchParams.get("page") || "1");
 			const pageSize = parseInt(url.searchParams.get("pageSize") || "100");
 			let buttons = await db.retrievePagedButtons(page, pageSize);
-			
+
 			let pagination = buttons.pagination;
 			let sortedButtons = [...buttons.buttons];
 			if (rainbowFilter) {
@@ -81,6 +81,46 @@ Bun.serve({
 				},
 			});
 		},
+		"/retrieveButton": async (req) => {
+			const url = new URL(req.url);
+			const buttonId = url.searchParams.get("buttonId");
+			if (!buttonId) {
+				return new Response("No buttonId provided", { status: 400 });
+			}
+			const button = await db.retrieveButton(parseInt(buttonId));
+			if (!button || !button.image) {
+				return new Response("Button or image data not found", { status: 404 });
+			}
+
+			const filename = button.filename || '';
+			const extension = filename.split('.').pop()?.toLowerCase();
+			let contentType = 'application/octet-stream'; // Default fallback
+			switch (extension) {
+				case 'gif': contentType = 'image/gif'; break;
+				case 'png': contentType = 'image/png'; break;
+				case 'jpg':
+				case 'jpeg': contentType = 'image/jpeg'; break;
+				case 'svg': contentType = 'image/svg+xml'; break;
+				case 'webp': contentType = 'image/webp'; break;
+			}
+
+			let imageBuffer: Buffer;
+			if (Buffer.isBuffer(button.image)) {
+				imageBuffer = button.image;
+			} else if (typeof button.image === 'string') {
+				imageBuffer = Buffer.from(button.image, 'base64');
+			} else {
+				console.error("Unexpected image data type:", typeof button.image);
+				return new Response("Invalid image data format", { status: 500 });
+			}
+
+
+			return new Response(imageBuffer, {
+				headers: {
+					"Content-Type": contentType,
+				},
+			});
+		},
 		"/buttonSearch": async (req) => {
 			const url = new URL(req.url);
 			const rainbowFilter = url.searchParams.get("rainbow") === "true";
@@ -88,10 +128,10 @@ Bun.serve({
 			if (!query) {
 				return new Response("No query provided", { status: 400 });
 			}
-			
+
 			const buttons = await db.retrieveAllButtons();
 			if (!buttons) return new Response("No buttons found", { status: 404 });
-			
+
 			const filteredButtons = buttons.filter((button: any) => {
 				const query_lower = query.toLowerCase();
 				return (
@@ -104,7 +144,7 @@ Bun.serve({
 
 			const page = parseInt(url.searchParams.get("page") || "1");
 			const pageSize = parseInt(url.searchParams.get("pageSize") || "200");
-			
+
 			let sortedButtons = [...filteredButtons];
 			if (rainbowFilter) {
 				sortedButtons.sort((a, b) => {
@@ -120,7 +160,7 @@ Bun.serve({
 			const validPage = Math.max(1, Math.min(page, totalPages || 1));
 			const start = (validPage - 1) * pageSize;
 			const end = start + pageSize;
-			
+
 			const paginatedButtons = sortedButtons.slice(start, end);
 			const hasNextPage = validPage < totalPages;
 			const hasPreviousPage = validPage > 1;

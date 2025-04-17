@@ -131,6 +131,15 @@ export function updateButtonColor(id: number, color: any, color_tag: string) {
 	}
 }
 
+export function retrieveButton(id: number) {
+	try {
+		return db.query.buttons.findFirst({
+			where: eq(schema.buttons.id, id),
+		});
+	} catch (error) {
+		return null;
+	}
+}
 
 export function retrieveAllScrapedURLs() {
 	try {
