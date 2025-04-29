@@ -1,0 +1,8 @@
+[package]
+name = "indiescraper"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+reqwest = { version = "0.12.15", features = ["blocking"] }
+scraper = "0.23.1"
