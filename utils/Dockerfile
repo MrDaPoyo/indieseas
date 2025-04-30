@@ -1,19 +1,21 @@
 # Use official Bun image
-FROM oven/bun:latest
+FROM debian
 
 # Set working directory
 WORKDIR /app
 
-# Install Python and dependencies for HuggingFace Transformers
+# Install Python, pip, and dependencies for HuggingFace Transformers
 RUN apt-get update && \
     apt-get install -y python3 python3-pip && \
-    pip3 install --upgrade pip && \
-    pip3 install torch transformers
+    pip3 install torch transformers --break-system-packages && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy project files
 COPY . .
 
 # Preinstall Bun dependencies
+RUN curl -fsSL https://bun.sh/install | bash
+
 RUN bun install
 
 # Expose the API port (default 8888 or environment-defined)
