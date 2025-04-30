@@ -8,6 +8,7 @@ indiesea.db-shm
 indiesea.db-wal
 keepon.log
 indiescraper/target
+indiescraper/.env
 
 # output
 out
