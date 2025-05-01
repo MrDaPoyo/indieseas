@@ -6,7 +6,10 @@ edition = "2024"
 [dependencies]
 async-std = "1.13.1"
 dotenv = "0.15.0"
+image = "0.25.6"
 reqwest = { version = "0.12.15", features = ["blocking"] }
 scraper = "0.23.1"
-sqlx = { version = "0.8.5", features = [ "runtime-async-std", "postgres" ] } 
+serde = "1.0.219"
+sqlx = { version = "0.8.5", features = ["runtime-async-std", "postgres"] } 
 tokio = { version = "1.44.2", features = ["full"] }
+urlencoding = "2.1.3"

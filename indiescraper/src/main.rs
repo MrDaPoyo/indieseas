@@ -5,12 +5,19 @@ use sqlx::Postgres;
 use sqlx::Pool;
 use sqlx::Row;
 use dotenv::dotenv;
+use image;
 
-static PROHIBITED_LINKS: [&str; 26] = [
+static PROHIBITED_LINKS: [&str; 32] = [
     "mailto:",
     "tel:",
     "javascript:",
     "discord.com",
+    "discord.gg",
+    "steamcommunity.com",
+    "steamstatic.com",
+    "steamcdn.net",
+    "catbox.moe",
+    "litterbox.catbox.moe",
     "twitch.tv",
     "youtube.com",
     "twitter.com",
@@ -35,50 +42,22 @@ static PROHIBITED_LINKS: [&str; 26] = [
     "ftp://",
 ];
 
-async fn extract_urls_from_html(body: String, path: String, pool: &Pool<Postgres>) -> String {
-    let document = Html::parse_document(&body);
-    let selector = Selector::parse("a").unwrap();
-    let mut links = Vec::new();
-    for element in document.select(&selector) {
-        if let Some(link) = element.value().attr("href") {
-            let mut new_link: String;
-            if link.starts_with("http") {
-                new_link = link.to_string();
-            } else if link.starts_with("//") {
-                new_link = format!("https:{}", link);
-            } else if link.starts_with("/") {
-                new_link = format!("https://{}/{}", path, &link[1..]);
-            } else {
-                new_link = format!("https://{}/{}", path, link);
-            }
+const scraper_worker: String = env.var("SCRAPER_WORKER").expect("SCRAPER_WORKER must be set");
 
-            if new_link.ends_with('/') {
-                new_link = new_link[..new_link.len() - 1].to_string();
-            }
-
-            let is_prohibited = PROHIBITED_LINKS.iter().any(|&prohibited| new_link.contains(prohibited));
-            new_link = new_link.to_lowercase();
-            if new_link != path && !is_prohibited && !links.contains(&new_link) {
-                links.push(new_link.clone());
-                let push_link: &str = &new_link.clone();
-                insert_link(pool, &push_link).await.unwrap_or_else(|_| {
-                    println!("Failed to insert link: {}", push_link);
-                });
-            }
-        }
+async fn check_button(buffer: &[u8], url: &str) -> Result<bool, image::ImageError> {
+    let img = image::load_from_memory(buffer)?;
+    let (width, height) = img.dimensions();
+    if width == 88 && height == 31 {
+        println!("Found button: {}", url);
+        return Ok(true);
     }
-    let mut unique_links = links.clone();
-    unique_links.sort();
-    unique_links.dedup();
-    unique_links.join("")
+    Ok(false)
 }
 
 async fn scrape_path(path: &str, pool: Pool<Postgres> ) -> Result<String, reqwest::Error> {
-    let url: String;
+    let url: String = path.to_string();
     if path.starts_with("http") {
-        url = path.to_string();
-    } else {
-        url = format!("https://{}", path);
+        url = path.replace("http://", "https://").replace("https://", "");
     }
     let response_result = reqwest::get(&url).await;
     let response = match response_result {
@@ -108,32 +87,71 @@ async fn scrape_path(path: &str, pool: Pool<Postgres> ) -> Result<String, reqwes
     let status_code = response.status();
     let body = response.text().await?;
     let document = Html::parse_document(&body);
+
     let title_selector = Selector::parse("title").unwrap();
-    let meta_selector = Selector::parse("meta").unwrap();
+    let meta_desc_selector = Selector::parse("meta[name='description']").unwrap();
 
-    let title = document.select(&title_selector).next().map(|el| el.inner_html());
+    let title = document.select(&title_selector).next().map(|element| element.inner_html());
+    let description = document.select(&meta_desc_selector).next().and_then(|element| {
+        element.value().attr("content").map(|s| s.to_string())
+    });
 
-    let mut description: Option<String> = None;
-    for element in document.select(&meta_selector) {
-        if let Some(name) = element.value().attr("name") {
-            if name.to_lowercase() == "description" {
-                if let Some(content) = element.value().attr("content") {
-                    description = Some(content.to_string());
-                    break;
+    let img_selector = Selector::parse("img").unwrap();
+    for img in document.select(&img_selector) {
+        let src = match img.value().attr("src") {
+            Some(src) => src,
+            None => continue,
+        };
+        
+        if PROHIBITED_LINKS.iter().any(|prohibited| src.contains(prohibited)) {
+            continue;
+        }
+        
+        let img_url = if src.starts_with("http") {
+            src.to_string()
+        } else if src.starts_with("/") {
+            format!("https://{}{}", url, src)
+        } else {
+            format!("https://{}/{}", url, src)
+        };
+        
+        let alt = img.value().attr("alt").unwrap_or("");
+        
+        let mut links_to = None;
+        let mut parent = img.parent();
+        while let Some(parent_element) = parent {
+            if let Some(element) = parent_element.value().as_element() {
+                if element.name() == "a" {
+                    if let Some(href) = element.attr("href") {
+                        links_to = Some(href.to_string());
+                        break;
+                    }
+                }
+            }
+            parent = parent_element.parent();
+        }
+        
+        if let Ok(img_response) = reqwest::get(&img_url).await {
+            if img_response.status().is_success() {
+                if let Ok(content) = img_response.bytes().await {
+                    println!("Found button: {} (links to: {:?})", img_url, links_to);
+                    
+                    let _ = sqlx::query(
+                        "INSERT INTO buttons (url, status_code, alt, title, content) 
+                         VALUES ($1, $2, $3, $4, $5) 
+                         ON CONFLICT (url) DO UPDATE SET 
+                         status_code = $2, alt = $3, title = $4, content = $5"
+                    )
+                    .bind(&img_url)
+                    .bind(img_response.status().as_u16() as i32)
+                    .bind(alt)
+                    .bind(links_to)
+                    .bind(&content.to_vec())
+                    .execute(&pool)
+                    .await;
                 }
             }
         }
-         if let Some(property) = element.value().attr("property") {
-             if property.to_lowercase() == "og:description" {
-                 if let Some(content) = element.value().attr("content") {
-                     description = Some(content.to_string());
-                 }
-             } else if property.to_lowercase() == "og:title" && title.is_none() {
-                 if let Some(content) = element.value().attr("content") {
-                        description = Some(content.to_string());
-                 }
-             }
-         }
     }
 
 
@@ -151,7 +169,7 @@ async fn scrape_path(path: &str, pool: Pool<Postgres> ) -> Result<String, reqwes
     .bind(description)                 // Bind description for $4
     .execute(&pool)
     .await;
-println!("Scraped {}: {} - {}", url, status_code, title.unwrap_or_default());
+    println!("Scraped {}: {} - {}", url, status_code, title.unwrap_or_default());
     Ok(links)
 }
 
