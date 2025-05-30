@@ -1382,11 +1382,15 @@ dependencies = [
  "async-std",
  "dotenv",
  "image",
+ "once_cell",
  "reqwest",
  "scraper",
  "serde",
+ "serde_derive",
+ "serde_json",
  "sqlx",
  "tokio",
+ "url",
  "urlencoding",
 ]
 
