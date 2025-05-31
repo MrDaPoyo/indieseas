@@ -10,4 +10,7 @@ export default defineConfig({
     mode: 'standalone',
   }),
   integrations: [svelte()],
+  server: {
+    host: true
+  }
 });
