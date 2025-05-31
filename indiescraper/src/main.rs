@@ -209,7 +209,7 @@ async fn initialize_db() -> Result<Pool<Postgres>, sqlx::Error> {
             scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             alt TEXT,
             title TEXT,
-			content BYTEA NOT NULL		
+			content BYTEA NOT NULL UNIQUE		
         );
         "#
 		)
