@@ -1,21 +1,5 @@
 # IndieSearch
 
-A modern search application built with AI capabilities and vector search functionality. This project combines a Node.js backend with PostgreSQL vector extensions for advanced search features.
-
-## Features
-
-- AI-powered search capabilities
-- Vector similarity search using pgvector
-- RESTful API backend
-- Docker containerization
-- PostgreSQL with vector extensions
-
-## Prerequisites
-
-- Node.js (v16 or higher)
-- Docker and Docker Compose
-- PostgreSQL with pgvector extension
-
 ## Installation
 
 1. Clone the repository:
@@ -89,16 +73,4 @@ The API server runs on port 8000 by default and provides endpoints for search fu
 
 - Frontend port: 8080 (default)
 - API port: 8000 (default)
-- Docker container port: 8888
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
-## License
-
-[Add your license information here]
-
+- AI Embedding port: 8888
