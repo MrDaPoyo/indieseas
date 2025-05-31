@@ -249,19 +249,78 @@ async fn retrieve_all_buttons_handler(
 		.get("pageSize")
 		.and_then(|l| l.parse().ok())
 		.unwrap_or(100);
+	let color_filter = params.get("color").map(|c| c == "true").unwrap_or(false);
 
 	let offset = (page - 1) * limit;
 
-	let total_count: (i64,) = sqlx
-		::query_as("SELECT COUNT(*) FROM buttons")
-		.fetch_one(&pool).await
-		.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+	if color_filter {
+		let search_query = params.get("q").unwrap_or(&"".to_string()).to_string();
+		let search_query = format!("%{}%", search_query);
+		
+		let count_query = "SELECT COUNT(*) FROM buttons WHERE color_tag ILIKE $1";
+
+		let total_count: (i64,) = sqlx
+			::query_as(count_query)
+			.bind(&search_query)
+			.fetch_one(&pool).await
+			.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+		let query = "SELECT id, url as button_text, color_tag, '' as website_url, color_average, scraped_at, alt, title, content FROM buttons WHERE color_tag ILIKE $1 ORDER BY id LIMIT $2 OFFSET $3";
+
+		let rows = sqlx
+			::query(query)
+			.bind(search_query)
+			.bind(limit as i64)
+			.bind(offset as i64)
+			.fetch_all(&pool).await
+			.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+		let buttons: Vec<Value> = rows
+			.iter()
+			.map(|row| {
+				json!({
+					"id": row.get::<i32, _>("id"),
+					"button_text": row.get::<String, _>("button_text"),
+					"color_tag": row.get::<Option<String>, _>("color_tag"),
+					"website_url": row.get::<String, _>("website_url"),
+					"color_average": row.get::<Option<String>, _>("color_average"),
+					"scraped_at": row.get::<Option<chrono::NaiveDateTime>, _>("scraped_at"),
+					"alt": row.get::<Option<String>, _>("alt"),
+					"title": row.get::<Option<String>, _>("title"),
+				})
+			})
+			.collect();
+
+		let total_pages = ((total_count.0 as f64) / (limit as f64)).ceil() as usize;
+
+		let response = json!({
+			"buttons": buttons,
+			"pagination": {
+				"currentPage": page,
+				"totalPages": total_pages,
+				"totalButtons": total_count.0,
+				"hasPreviousPage": page > 1,
+				"hasNextPage": page < total_pages,
+				"previousPage": if page > 1 { Some(page - 1) } else { None },
+				"nextPage": if page < total_pages { Some(page + 1) } else { None }
+			}
+		});
+		return Ok(Json(response));
+	}
 
 	if params.contains_key("q") {
 		let search_query = params.get("q").unwrap();
 		let search_query = format!("%{}%", search_query);
-		let query =
-			"SELECT id, url as button_text, color_tag, '' as website_url, color_average, scraped_at, alt, title, content FROM buttons WHERE url ILIKE $1 ORDER BY id LIMIT $2 OFFSET $3";
+		
+		let count_query = "SELECT COUNT(*) FROM buttons WHERE url ILIKE $1";
+
+		let total_count: (i64,) = sqlx
+			::query_as(count_query)
+			.bind(&search_query)
+			.fetch_one(&pool).await
+			.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+		let query = "SELECT id, url as button_text, color_tag, '' as website_url, color_average, scraped_at, alt, title, content FROM buttons WHERE url ILIKE $1 ORDER BY id LIMIT $2 OFFSET $3";
 
 		let rows = sqlx
 			::query(query)
@@ -283,7 +342,6 @@ async fn retrieve_all_buttons_handler(
 				"scraped_at": row.get::<Option<chrono::NaiveDateTime>, _>("scraped_at"),
 				"alt": row.get::<Option<String>, _>("alt"),
 				"title": row.get::<Option<String>, _>("title"),
-				"content": row.get::<Option<Vec<u8>>, _>("content")
 			})
 			})
 			.collect();
@@ -303,9 +361,13 @@ async fn retrieve_all_buttons_handler(
 					"nextPage": if page < total_pages { Some(page + 1) } else { None }
 				}
 			});
-
 		return Ok(Json(response));
 	}
+
+	let total_count: (i64,) = sqlx
+		::query_as("SELECT COUNT(*) FROM buttons")
+		.fetch_one(&pool).await
+		.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
 	let query =
 		"SELECT id, url as button_text, color_tag, '' as website_url, color_average, scraped_at, alt, title, content FROM buttons ORDER BY id LIMIT $1 OFFSET $2";
@@ -329,7 +391,6 @@ async fn retrieve_all_buttons_handler(
 				"scraped_at": row.get::<Option<chrono::NaiveDateTime>, _>("scraped_at"),
 				"alt": row.get::<Option<String>, _>("alt"),
 				"title": row.get::<Option<String>, _>("title"),
-				"content": row.get::<Option<Vec<u8>>, _>("content")
 			})
 		})
 		.collect();

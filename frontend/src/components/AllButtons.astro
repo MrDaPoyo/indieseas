@@ -32,7 +32,7 @@ if (query && query.trim() !== "") {
 		new URL(Astro.url.origin + "/api/buttonSearch").href +
 		"?q=" + encodeURIComponent(query) + 
 		"&pageSize=" + (pageSize || Astro.url.searchParams.get("pageSize") || '10') +
-		(isColorFilter ? `&color=${encodeURIComponent(colorParam)}&page=${page}` : "");
+		(isColorFilter ? `&color=${encodeURIComponent(colorParam || false)}&page=${page}` : "");
 	
 	const buttonSearchResponse = await fetch(targetUrl, {
 		method: "GET",
@@ -155,6 +155,8 @@ const queryMessage = query
 				<option value="white">White</option>
 				<option value="pink">Pink</option>
 				<option value="brown">Brown</option>
+				<option value="b&n">Black & White</option>
+				<option value="rainbow">Rainbow</option>
 			</select>
 		</div>
 

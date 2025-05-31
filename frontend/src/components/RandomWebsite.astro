@@ -19,7 +19,6 @@ if (!response.ok) {
 
 const randomWebsite = await response.json()
 const website = randomWebsite.website;
-console.log(randomWebsite);
 const formattedDate = new Date(website.scraped_at).toTimeString();
 ---
 <span>
@@ -27,13 +26,13 @@ const formattedDate = new Date(website.scraped_at).toTimeString();
 </span>
 <div class="website-showcase">
     <h2 class="website-title">
-        <a href={`https://${website.url}`} target="_blank" rel="noopener noreferrer">{website.title}</a>
+        <a href={website.url} target="_blank" rel="noopener noreferrer">{website.title || website.url}</a>
     </h2>
     <p class="website-info">Scraped: {formattedDate}</p>
     
     <div class="website-preview">
-        <iframe 
-            src={`https://${website.url}`} 
+        <iframe
+            src={website.url}
             title={website.title || website.url}
             sandbox="allow-scripts allow-same-origin"
             loading="lazy"

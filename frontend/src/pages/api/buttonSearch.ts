@@ -17,53 +17,53 @@ export const GET: APIRoute = async (request) => {
 			);
 		}
 
-		if (color) {
-			const response = await fetch(
-				`http://localhost:8000/buttonSearchColor?q=${encodeURIComponent(
-					query
-				)}&color=true&page=${
-					url.searchParams.get("page") || 1
-				}&pageSize=${
-					url.searchParams.get("pageSize") || 200
-				}`
-			);
-			if (!response.ok) {
-				return new Response(
-					JSON.stringify({
-						error: "Failed to reach the IndieSeas API",
-					}),
-					{
-						status: response.status,
-						headers: { "Content-Type": "application/json" },
-					}
-				);
-			}
-
-			const result = await response.json();
-			console.log(result.pagination.totalButtons);
+	if (color) {
+		const response = await fetch(
+			`http://localhost:8000/retrieveAllButtons?q=${encodeURIComponent(
+				query
+			)}&color=true&page=${
+				url.searchParams.get("page") || 1
+			}&pageSize=${
+				url.searchParams.get("pageSize") || 200
+			}`
+		);
+		if (!response.ok) {
 			return new Response(
 				JSON.stringify({
-					results: result,
-					time: performance.now() - timer,
+					error: "Failed to reach the IndieSeas API",
 				}),
 				{
-					status: 200,
-					headers: {
-						"Content-Type": "text/json",
-					},
+					status: response.status,
+					headers: { "Content-Type": "application/json" },
 				}
 			);
 		}
 
-		const response = await fetch(
-			`http://localhost:8000/buttonSearch?q=${encodeURIComponent(
-				query
-			)}&rainbow=${
-				request.url.searchParams.get("rainbow") == "true"
-					? "true"
-					: "false"
-			}`
+		const result = await response.json();
+		console.log(result.pagination.totalButtons);
+		return new Response(
+			JSON.stringify({
+				results: result,
+				time: performance.now() - timer,
+			}),
+			{
+				status: 200,
+				headers: {
+					"Content-Type": "text/json",
+				},
+			}
 		);
+	}
+
+	const response = await fetch(
+		`http://localhost:8000/retrieveAllButtons?q=${encodeURIComponent(
+			query
+		)}&page=${
+			url.searchParams.get("page") || 1
+		}&pageSize=${
+			url.searchParams.get("pageSize") || 200
+		}`
+	);
 		if (!response.ok) {
 			return new Response(
 				JSON.stringify({ error: "Failed to reach the IndieSeas API" }),
