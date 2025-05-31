@@ -45,7 +45,7 @@ async function checkIfIndexed(url: string) {
 		);
 	}
 
-	const isIndexed = (await response.json()).isIndexed as boolean;
+	const isIndexed = (await response.json()).indexed as boolean;
 	return isIndexed;
 }
 ---
