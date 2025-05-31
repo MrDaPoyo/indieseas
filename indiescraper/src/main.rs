@@ -500,7 +500,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let mut v = visited.lock().await;
 
 		if existing_urls.is_empty() {
-			let start_url = "https://nekoweb.org";
+			let start_url = std::env::args().nth(1).unwrap_or_else(|| "https://nekoweb.org".to_string());
 			if v.insert(start_url.to_string()) {
 				q.push_back(start_url.to_string());
 			}
