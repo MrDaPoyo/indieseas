@@ -198,7 +198,7 @@ async fn retrieve_all_buttons_handler(State(pool): State<PgPool>) -> Result<
 	Json<Vec<Value>>,
 	StatusCode
 > {
-	let query = "SELECT id, button_text, color_tag, website_url FROM buttons ORDER BY id";
+	let query = "SELECT id, url as button_text, color_tag, '' as website_url FROM buttons ORDER BY id";
 
 	let rows = sqlx
 		::query(query)
@@ -224,11 +224,23 @@ async fn check_indexed_handler(
 	Query(params): Query<HashMap<String, String>>,
 	State(pool): State<PgPool>
 ) -> Result<Json<Value>, StatusCode> {
-	let website = params.get("website").ok_or(StatusCode::BAD_REQUEST)?;
+	let mut website = params.get("url").ok_or(StatusCode::BAD_REQUEST)?.clone();
+	if website.is_empty() {
+		return Err(StatusCode::BAD_REQUEST);
+	}
+	if website.starts_with("http://") {
+		website.replace_range(0..7, "");
+	}
+	if website.starts_with("https://") {
+		website.replace_range(0..8, "");
+	}
+	if !website.ends_with('/') {
+		website.push('/');
+	}
 
 	let row: (i64,) = sqlx
-		::query_as("SELECT COUNT(*) FROM websites_index WHERE website = $1")
-		.bind(website)
+		::query_as("SELECT COUNT(*) FROM websites_index WHERE website LIKE CONCAT('http://', $1) OR website LIKE CONCAT('https://', $1)")
+		.bind(website.clone())
 		.fetch_one(&pool).await
 		.map_err(|e| {
 			error!("Database error in check_indexed_handler: {}", e);
@@ -237,43 +249,6 @@ async fn check_indexed_handler(
 
 	let is_indexed = row.0 > 0;
 	Ok(Json(json!({ "indexed": is_indexed })))
-}
-
-async fn vectorize_handler(
-	Json(payload): Json<VectorizeRequest>,
-	State(pool): State<PgPool>
-) -> Result<Json<Value>, StatusCode> {
-	let ai_url = env::var("AI_URL").map_err(|e| {
-		error!("AI_URL environment variable not set: {}", e);
-		StatusCode::INTERNAL_SERVER_ERROR
-	})?;
-
-	let client = reqwest::Client::new();
-	let response = client
-		.post(&format!("{}/vectorize", ai_url))
-		.json(&json!({ "text": payload.text }))
-		.send().await
-		.map_err(|e| {
-			error!("Failed to send request to AI service: {}", e);
-			StatusCode::BAD_GATEWAY
-		})?;
-
-	let vector_data: Value = response.json().await.map_err(|e| {
-		error!("Failed to parse AI service response: {}", e);
-		StatusCode::INTERNAL_SERVER_ERROR
-	})?;
-
-	let vector: Vec<f32> = vector_data["vector"]
-		.as_array()
-		.ok_or_else(|| {
-			error!("AI service response missing 'vector' array field");
-			StatusCode::INTERNAL_SERVER_ERROR
-		})?
-		.iter()
-		.map(|v| v.as_f64().unwrap_or(0.0) as f32)
-		.collect();
-
-	Ok(Json(json!({"vector": vector})))
 }
 
 #[tokio::main]
