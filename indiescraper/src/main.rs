@@ -499,10 +499,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let mut q = queue.lock().await;
 		let mut v = visited.lock().await;
 
-		if existing_urls.is_empty() {
-			let start_url = std::env::args().nth(1).unwrap_or_else(|| "https://nekoweb.org".to_string());
-			if v.insert(start_url.to_string()) {
-				q.push_back(start_url.to_string());
+		let args: Vec<String> = std::env::args().collect();
+		let custom_start_url = if let Some(pos) = args.iter().position(|arg| arg == "--scrape-url") {
+			if pos + 1 < args.len() {
+				Some(args[pos + 1].clone())
+			} else {
+				panic!("--scrape-url requires a URL argument");
+			}
+		} else {
+			None
+		};
+
+		if let Some(start_url) = custom_start_url {
+			if v.insert(start_url.clone()) {
+				q.push_back(start_url.clone());
+			}
+			println!("Starting with custom URL: {}", start_url);
+		} else if existing_urls.is_empty() {
+			let start_url = "https://nekoweb.org".to_string();
+			if v.insert(start_url.clone()) {
+				q.push_back(start_url.clone());
 			}
 			println!("No existing URLs found, starting with: {}", start_url);
 		} else {
@@ -542,13 +558,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 				let _permit = semaphore
 					.acquire().await
 					.expect("Failed to acquire semaphore permit");
-				println!("Scraping: {}", current_url);
 
 				let task_logic = || async {
 					if is_url_already_scraped(&pool, &current_url).await? {
-						println!("URL already scraped, skipping: {}", current_url);
 						return Ok::<(), Box<dyn Error + Send + Sync>>(());
 					}
+
+					println!("Scraping: {}", current_url);
 
 					match is_allowed(&current_url).await {
 						Ok(allowed) => {
