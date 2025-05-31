@@ -1,25 +1,32 @@
-# Use official Bun image
-FROM debian
+FROM oven/bun:latest AS base
+WORKDIR /usr/src/app
 
-# Set working directory
-WORKDIR /app
-
-# Install Python, pip, and dependencies for HuggingFace Transformers
 RUN apt-get update && \
     apt-get install -y python3 python3-pip && \
     pip3 install torch transformers --break-system-packages && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy project files
+RUN mkdir -p /usr/src/app/node_modules/@huggingface/transformers/.cache && \
+    chown -R bun:bun /usr/src/app
+
+FROM base AS install
+RUN mkdir -p /temp/dev
+COPY package.json bun.lockb* /temp/dev/
+RUN cd /temp/dev && bun install --frozen-lockfile
+
+RUN mkdir -p /temp/prod
+COPY package.json bun.lockb* /temp/prod/
+RUN cd /temp/prod && bun install --frozen-lockfile --production
+
+FROM base AS prerelease
+COPY --from=install /temp/dev/node_modules node_modules
 COPY . .
 
-# Preinstall Bun dependencies
-RUN curl -fsSL https://bun.sh/install | bash
+FROM base AS release
+COPY --from=install /temp/prod/node_modules node_modules
+COPY --from=prerelease /usr/src/app/vectorize.ts .
+COPY --from=prerelease /usr/src/app/package.json .
 
-RUN bun install
-
-# Expose the API port (default 8888 or environment-defined)
-EXPOSE 8888
-
-# Start the Bun server
-CMD ["bun", "run", "index.ts"]
+USER bun
+EXPOSE 8888/tcp
+ENTRYPOINT [ "bun", "run", "vectorize.ts" ]

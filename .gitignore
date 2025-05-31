@@ -9,6 +9,8 @@ indiesea.db-wal
 keepon.log
 indiescraper/target
 indiescraper/.env
+api/target
+api/.env
 
 # output
 out
