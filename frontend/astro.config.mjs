@@ -11,6 +11,6 @@ export default defineConfig({
   }),
   integrations: [svelte()],
   server: {
-    host: true
+    allowedHosts: ['localhost', '127.0.0.1', 'indieseas.net']
   }
 });
