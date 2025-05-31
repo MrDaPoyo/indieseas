@@ -17,10 +17,13 @@ use tokio::sync::Mutex;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
+
+mod robots;
 mod colorize;
+use robots::is_allowed;
 use colorize::ColorAnalyzer;
 
-static PROHIBITED_LINKS: [&str; 30] = [
+static PROHIBITED_LINKS: [&str; 31] = [
 	"mailto:",
 	"tel:",
 	"javascript:",
@@ -50,6 +53,7 @@ static PROHIBITED_LINKS: [&str; 30] = [
 	"bit.ly",
 	"tinyurl.com",
 	"goo.gl",
+	"archive.org",
 	"ftp://",
 ];
 
@@ -104,7 +108,7 @@ struct JsonLinkDetail {
 }
 
 #[derive(Deserialize, Debug)]
-struct WebsiteData {
+struct WebsiteData<ButtonDetails, LinkDetails> {
 	buttons: HashMap<String, ButtonDetails>,
 	title: String,
 	description: String,
@@ -117,12 +121,6 @@ struct ButtonDetails {
 	src: String,
 	links_to: Option<String>,
 	alt: String,
-}
-
-#[derive(Deserialize, Debug)]
-struct LinkDetails {
-	href: Option<String>,
-	text: String,
 }
 
 async fn is_url_already_scraped(pool: &Pool<Postgres>, url: &str) -> Result<bool, sqlx::Error> {
@@ -424,7 +422,8 @@ async fn vectorize_text(text: &str) -> Result<Vec<f32>, Box<dyn Error + Send + S
 async fn process_button_image(
 	pool: &Pool<Postgres>,
 	button_src_url: &str,
-	alt: Option<String>
+	alt: Option<String>,
+	button_links_to: Option<String>
 ) -> Result<Option<i32>, Box<dyn Error + Send + Sync>> {
 	println!("Processing button image: {}", button_src_url);
 
@@ -551,6 +550,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 						return Ok::<(), Box<dyn Error + Send + Sync>>(());
 					}
 
+					match is_allowed(&current_url).await {
+						Ok(allowed) => {
+							if !allowed {
+								println!("Robots.txt disallows scraping: {}", current_url);
+								return Ok::<(), Box<dyn Error + Send + Sync>>(());
+							}
+						}
+						Err(e) => {
+							eprintln!("Failed to check robots.txt for {}: {}", current_url, e);
+						}
+					}
+
 					sleep(Duration::from_secs(1)).await;
 
 					let response = ScraperResponse::get(&current_url).await?;
@@ -604,7 +615,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 								process_button_image(
 									&pool_clone,
 									&button_src_url_clone,
-									alt_clone
+									alt_clone,
+									links_to_url_clone.clone()
 								).await
 							{
 								Ok(button_id) => {

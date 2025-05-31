@@ -1,4 +1,4 @@
-use image::{DynamicImage, Rgb};
+use image::{DynamicImage};
 use std::collections::HashMap;
 
 pub struct ColorAnalyzer {
@@ -105,9 +105,4 @@ impl ColorAnalyzer {
         }
         true
     }
-}
-
-pub fn analyze_image_colors(image: &DynamicImage) -> ColorAnalysis {
-    let analyzer = ColorAnalyzer::new();
-    analyzer.analyze_image(image)
 }
