@@ -17,6 +17,11 @@ use axum::{
 	Router,
 };
 use tower_http::cors::{ CorsLayer, Any };
+use http_body_util::StreamBody;
+use axum::response::Response;
+use axum::http::{header, HeaderMap};
+use tokio_util::io::ReaderStream;
+use std::io::Cursor;
 
 #[derive(Debug, Deserialize)]
 struct VectorizeRequest {
@@ -86,8 +91,8 @@ async fn search_handler(
 		.ok_or_else(|| {
 			error!("AI service response missing 'vectors' array field");
 			StatusCode::INTERNAL_SERVER_ERROR
-		})?[0]
-		.as_array()
+		})?
+		[0].as_array()
 		.ok_or_else(|| {
 			error!("AI service response vectors[0] is not an array");
 			StatusCode::INTERNAL_SERVER_ERROR
@@ -194,47 +199,32 @@ async fn random_website_handler(State(pool): State<PgPool>) -> Result<Json<Value
 	Ok(Json(result))
 }
 
-async fn retrieve_all_buttons_handler(State(pool): State<PgPool>, Query(params): Query<HashMap<String, String>>) -> Result<
-	Json<Vec<Value>>,
-	StatusCode
-> {
-	let query = "SELECT id, url as button_text, color_tag, '' as website_url FROM buttons ORDER BY id";
-
-	let rows = sqlx
-		::query(query)
-		.fetch_all(&pool).await
-		.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-	let buttons: Vec<Value> = rows
-		.iter()
-		.map(|row| {
-			json!({
-				"id": row.get::<i32, _>("id"),
-				"button_text": row.get::<String, _>("button_text"),
-				"color_tag": row.get::<Option<String>, _>("color_tag"),
-				"website_url": row.get::<String, _>("website_url")
-			})
-		})
-		.collect();
-	
-	let page: usize = params.get("page")
+async fn retrieve_all_buttons_handler(
+	State(pool): State<PgPool>,
+	Query(params): Query<HashMap<String, String>>
+) -> Result<Json<Value>, StatusCode> {
+	let page: usize = params
+		.get("page")
 		.and_then(|p| p.parse().ok())
 		.unwrap_or(1);
-	let limit: usize = params.get("pageSize")
+	let limit: usize = params
+		.get("pageSize")
 		.and_then(|l| l.parse().ok())
 		.unwrap_or(100);
-	
+
 	let offset = (page - 1) * limit;
-	
-	let total_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM buttons")
+
+	let total_count: (i64,) = sqlx
+		::query_as("SELECT COUNT(*) FROM buttons")
 		.fetch_one(&pool).await
 		.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-	
+
 	if params.contains_key("q") {
 		let search_query = params.get("q").unwrap();
 		let search_query = format!("%{}%", search_query);
-		let query = "SELECT id, url as button_text, color_tag, '' as website_url FROM buttons WHERE url ILIKE $1 ORDER BY id LIMIT $2 OFFSET $3";
-		
+		let query =
+			"SELECT id, url as button_text, color_tag, '' as website_url, color_average, scraped_at, alt, title, content FROM buttons WHERE url ILIKE $1 ORDER BY id LIMIT $2 OFFSET $3";
+
 		let rows = sqlx
 			::query(query)
 			.bind(search_query)
@@ -247,32 +237,40 @@ async fn retrieve_all_buttons_handler(State(pool): State<PgPool>, Query(params):
 			.iter()
 			.map(|row| {
 				json!({
-					"id": row.get::<i32, _>("id"),
-					"button_text": row.get::<String, _>("button_text"),
-					"color_tag": row.get::<Option<String>, _>("color_tag"),
-					"website_url": row.get::<String, _>("website_url")
-				})
+				"id": row.get::<i32, _>("id"),
+				"button_text": row.get::<String, _>("button_text"),
+				"color_tag": row.get::<Option<String>, _>("color_tag"),
+				"website_url": row.get::<String, _>("website_url"),
+				"color_average": row.get::<Option<String>, _>("color_average"),
+				"scraped_at": row.get::<Option<chrono::NaiveDateTime>, _>("scraped_at"),
+				"alt": row.get::<Option<String>, _>("alt"),
+				"title": row.get::<Option<String>, _>("title"),
+				"content": row.get::<Option<Vec<u8>>, _>("content")
+			})
 			})
 			.collect();
-		
-		let total_pages = (total_count.0 as f64 / limit as f64).ceil() as usize;
-		
-		let response = json!({
-			"buttons": buttons,
-			"pagination": {
-				"page": page,
-				"limit": limit,
-				"total": total_count.0,
-				"total_pages": total_pages,
-				"has_next": page < total_pages,
-				"has_prev": page > 1
-			}
-		});
 
-		return Ok(Json(vec![response]));
+		let total_pages = ((total_count.0 as f64) / (limit as f64)).ceil() as usize;
+
+		let response =
+			json!({
+				"buttons": buttons,
+				"pagination": {
+					"currentPage": page,
+					"totalPages": total_pages,
+					"totalButtons": total_count.0,
+					"hasPreviousPage": page > 1,
+					"hasNextPage": page < total_pages,
+					"previousPage": if page > 1 { Some(page - 1) } else { None },
+					"nextPage": if page < total_pages { Some(page + 1) } else { None }
+				}
+			});
+
+		return Ok(Json(response));
 	}
-	
-	let query = "SELECT id, url as button_text, color_tag, '' as website_url FROM buttons ORDER BY id LIMIT $1 OFFSET $2";
+
+	let query =
+		"SELECT id, url as button_text, color_tag, '' as website_url, color_average, scraped_at, alt, title, content FROM buttons ORDER BY id LIMIT $1 OFFSET $2";
 
 	let rows = sqlx
 		::query(query)
@@ -288,26 +286,33 @@ async fn retrieve_all_buttons_handler(State(pool): State<PgPool>, Query(params):
 				"id": row.get::<i32, _>("id"),
 				"button_text": row.get::<String, _>("button_text"),
 				"color_tag": row.get::<Option<String>, _>("color_tag"),
-				"website_url": row.get::<String, _>("website_url")
+				"website_url": row.get::<String, _>("website_url"),
+				"color_average": row.get::<Option<String>, _>("color_average"),
+				"scraped_at": row.get::<Option<chrono::NaiveDateTime>, _>("scraped_at"),
+				"alt": row.get::<Option<String>, _>("alt"),
+				"title": row.get::<Option<String>, _>("title"),
+				"content": row.get::<Option<Vec<u8>>, _>("content")
 			})
 		})
 		.collect();
-	
-	let total_pages = (total_count.0 as f64 / limit as f64).ceil() as usize;
-	
-	let response = json!({
-		"buttons": buttons,
-		"pagination": {
-			"page": page,
-			"limit": limit,
-			"total": total_count.0,
-			"total_pages": total_pages,
-			"has_next": page < total_pages,
-			"has_prev": page > 1
-		}
-	});
 
-	Ok(Json(vec![response]))
+	let total_pages = ((total_count.0 as f64) / (limit as f64)).ceil() as usize;
+
+	let response =
+		json!({
+			"buttons": buttons,
+			"pagination": {
+				"currentPage": page,
+				"totalPages": total_pages,
+				"totalButtons": total_count.0,
+				"hasPreviousPage": page > 1,
+				"hasNextPage": page < total_pages,
+				"previousPage": if page > 1 { Some(page - 1) } else { None },
+				"nextPage": if page < total_pages { Some(page + 1) } else { None }
+			}
+		});
+
+	Ok(Json(response))
 }
 
 async fn check_indexed_handler(
@@ -329,7 +334,9 @@ async fn check_indexed_handler(
 	}
 
 	let row: (i64,) = sqlx
-		::query_as("SELECT COUNT(*) FROM websites_index WHERE website LIKE CONCAT('http://', $1) OR website LIKE CONCAT('https://', $1)")
+		::query_as(
+			"SELECT COUNT(*) FROM websites_index WHERE website LIKE CONCAT('http://', $1) OR website LIKE CONCAT('https://', $1)"
+		)
 		.bind(website.clone())
 		.fetch_one(&pool).await
 		.map_err(|e| {
@@ -341,18 +348,46 @@ async fn check_indexed_handler(
 	Ok(Json(json!({ "indexed": is_indexed })))
 }
 
+async fn single_button_handler(
+	State(pool): State<PgPool>,
+	Query(params): Query<HashMap<String, String>>
+) -> Result<Response, StatusCode> {
+	let button_id = params.get("buttonId").ok_or(StatusCode::BAD_REQUEST)?;
+	let row: (i32, String, Option<String>, String, Option<String>, Option<chrono::NaiveDateTime>, Option<String>, Option<String>, Option<Vec<u8>>) = sqlx
+		::query_as(
+			"SELECT id, url as button_text, color_tag, '' as website_url, color_average, scraped_at, alt, title, content FROM buttons WHERE id = $1"
+		)
+		.bind(button_id.parse::<i32>().map_err(|_| StatusCode::BAD_REQUEST)?)
+		.fetch_one(&pool).await
+		.map_err(|_| StatusCode::NOT_FOUND)?;
+
+	if let Some(content) = row.8.as_ref() {
+		let content_type = "image/png";
+		let filename = format!("button_{}.png", row.0);
+		
+		let body = axum::body::Body::from(content.clone());
+		
+		return Ok(Response::builder()
+			.header(header::CONTENT_TYPE, content_type)
+			.header(header::CONTENT_DISPOSITION, &format!("attachment; filename=\"{}\"", filename))
+			.body(body)
+			.unwrap());
+	} else {
+		return Err(StatusCode::NOT_FOUND);
+	}
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	dotenv().ok();
-	
+
 	tracing_subscriber::fmt::init();
 
 	info!("Starting search server...");
-	
+
 	let pool: PgPool = PgPoolOptions::new()
 		.max_connections(20)
-		.connect(&env::var("DB_URL").expect("DB_URL must be set"))
-		.await?;
+		.connect(&env::var("DB_URL").expect("DB_URL must be set")).await?;
 
 	let app = Router::new()
 		.route("/stats", get(stats_handler))
@@ -360,6 +395,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		.route("/random", get(random_website_handler))
 		.route("/retrieveAllButtons", get(retrieve_all_buttons_handler))
 		.route("/checkIfIndexed", get(check_indexed_handler))
+		.route("/retrieveButton", get(single_button_handler))
 		.layer(
 			CorsLayer::new()
 				.allow_origin(Any)

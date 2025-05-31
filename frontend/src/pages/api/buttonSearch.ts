@@ -40,6 +40,7 @@ export const GET: APIRoute = async (request) => {
 			}
 
 			const result = await response.json();
+			console.log(result.pagination.totalButtons);
 			return new Response(
 				JSON.stringify({
 					results: result,

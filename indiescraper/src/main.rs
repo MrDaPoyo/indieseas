@@ -211,7 +211,7 @@ async fn initialize_db() -> Result<Pool<Postgres>, sqlx::Error> {
             scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             alt TEXT,
             title TEXT,
-			content BYTEA		
+			content BYTEA NOT NULL		
         );
         "#
 		)
@@ -264,11 +264,7 @@ async fn insert_website(
 	description: Option<String>,
 	raw_text: &str
 ) -> Result<i32, Box<dyn Error + Send + Sync>> {
-	let url = if !url.ends_with("/") {
-		format!("{}/", url)
-	} else {
-		url.to_string()
-	};
+	let url = if !url.ends_with("/") { format!("{}/", url) } else { url.to_string() };
 	let row = sqlx
 		::query(
 			r#"
@@ -291,18 +287,20 @@ async fn insert_website(
 		if !title_text.is_empty() {
 			match vectorize_text(&title_text).await {
 				Ok(vector) => {
-					if let Err(e) = sqlx
-						::query(
-							r#"
+					if
+						let Err(e) = sqlx
+							::query(
+								r#"
 						INSERT INTO websites_index (website, embedding, type)
 						VALUES ($1, $2, $3)
 						ON CONFLICT DO NOTHING
 						"#
-						)
-						.bind(&url)
-						.bind(vector)
-						.bind("title")
-						.execute(pool).await {
+							)
+							.bind(&url)
+							.bind(vector)
+							.bind("title")
+							.execute(pool).await
+					{
 						eprintln!("Failed to insert title embedding for {}: {}", url, e);
 					} else {
 						println!("Successfully inserted title embedding for: {}", url);
@@ -319,18 +317,20 @@ async fn insert_website(
 		if !description_text.is_empty() {
 			match vectorize_text(&description_text).await {
 				Ok(vector) => {
-					if let Err(e) = sqlx
-						::query(
-							r#"
+					if
+						let Err(e) = sqlx
+							::query(
+								r#"
 						INSERT INTO websites_index (website, embedding, type)
 						VALUES ($1, $2, $3)
 						ON CONFLICT DO NOTHING
 						"#
-						)
-						.bind(&url)
-						.bind(vector)
-						.bind("description")
-						.execute(pool).await {
+							)
+							.bind(&url)
+							.bind(vector)
+							.bind("description")
+							.execute(pool).await
+					{
 						eprintln!("Failed to insert description embedding for {}: {}", url, e);
 					} else {
 						println!("Successfully inserted description embedding for: {}", url);
@@ -354,21 +354,32 @@ async fn insert_website(
 		for (i, chunk) in chunks.iter().enumerate() {
 			match vectorize_text(chunk).await {
 				Ok(vector) => {
-					if let Err(e) = sqlx
-						::query(
-							r#"
+					if
+						let Err(e) = sqlx
+							::query(
+								r#"
 						INSERT INTO websites_index (website, embedding, type)
 						VALUES ($1, $2, $3)
 						ON CONFLICT DO NOTHING
 						"#
-						)
-						.bind(&url)
-						.bind(vector)
-						.bind(format!("raw_text_chunk_{}", i))
-						.execute(pool).await {
-						eprintln!("Failed to insert raw text chunk {} embedding for {}: {}", i, url, e);
+							)
+							.bind(&url)
+							.bind(vector)
+							.bind(format!("raw_text_chunk_{}", i))
+							.execute(pool).await
+					{
+						eprintln!(
+							"Failed to insert raw text chunk {} embedding for {}: {}",
+							i,
+							url,
+							e
+						);
 					} else {
-						println!("Successfully inserted raw text chunk {} embedding for: {}", i, url);
+						println!(
+							"Successfully inserted raw text chunk {} embedding for: {}",
+							i,
+							url
+						);
 					}
 				}
 				Err(e) => {
@@ -380,7 +391,6 @@ async fn insert_website(
 
 	Ok(website_id)
 }
-
 
 async fn vectorize_text(text: &str) -> Result<Vec<f32>, Box<dyn Error + Send + Sync>> {
 	let ai_url = env::var("AI_URL").unwrap_or_else(|_| "http://localhost:8888".to_string());
@@ -415,7 +425,7 @@ async fn process_button_image(
 	pool: &Pool<Postgres>,
 	button_src_url: &str,
 	alt: Option<String>
-) -> Result<i32, Box<dyn Error + Send + Sync>> {
+) -> Result<Option<i32>, Box<dyn Error + Send + Sync>> {
 	println!("Processing button image: {}", button_src_url);
 
 	sleep(Duration::from_millis(500)).await;
@@ -423,55 +433,50 @@ async fn process_button_image(
 	let client = reqwest::Client::new();
 	let response = client.get(button_src_url).send().await?;
 	let status_code = response.status().as_u16() as i32;
-	let mut image_content: Option<Vec<u8>> = None;
-	let mut is88x31 = false;
 
-	if response.status().is_success() {
-		let buffer = response.bytes().await?.to_vec();
-		if let Ok(is_standard_size) = check_button(&buffer, button_src_url).await {
-			image_content = Some(buffer);
-		} else {
-			eprintln!("Failed to check button dimensions for {}: Image error", button_src_url);
-		}
-	} else {
+	if !response.status().is_success() {
 		eprintln!("Failed to fetch button image {}: Status {}", button_src_url, status_code);
+		return Ok(None);
 	}
 
-	let (color_tags, color_average) = if let Some(ref content) = image_content {
-		match image::load_from_memory(content) {
-			Ok(img) => {
-				let analysis = ColorAnalyzer::new().analyze_image(&img);
-				(analysis.tags.join(","), analysis.hex_average)
-			}
-			Err(_) => (String::new(), String::new())
+	let buffer = response.bytes().await?.to_vec();
+
+	let is_standard_size = check_button(&buffer, button_src_url).await?;
+	if !is_standard_size {
+		return Ok(None);
+	}
+
+	let (color_tags, color_average) = match image::load_from_memory(&buffer) {
+		Ok(img) => {
+			let analysis = ColorAnalyzer::new().analyze_image(&img);
+			(analysis.tags.join(","), analysis.hex_average)
 		}
-	} else {
-		(String::new(), String::new())
+		Err(_) => (String::new(), String::new()),
 	};
 
 	let row = sqlx
 		::query(
 			r#"
-        INSERT INTO buttons (url, status_code, alt, content, color_tag, color_average)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (url) DO UPDATE SET status_code = $2, alt = $3, content = $4, color_tag = $5, color_average = $6
-        RETURNING id
-        "#
+		INSERT INTO buttons (url, status_code, alt, content, color_tag, color_average)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (url) DO UPDATE SET status_code = $2, alt = $3, content = $4, color_tag = $5, color_average = $6
+		RETURNING id
+		"#
 		)
 		.bind(button_src_url)
 		.bind(status_code)
 		.bind(alt)
-		.bind(image_content)
+		.bind(buffer)
 		.bind(color_tags)
 		.bind(color_average)
 		.fetch_one(pool).await?;
 
-	Ok(row.get::<i32, _>("id"))
+	Ok(Some(row.get::<i32, _>("id")))
 }
 
 async fn is_image_url(url: &str) -> bool {
-    let image_extensions = ["jpg", "jpeg", "png", "gif", "webp"];
-    image_extensions.iter().any(|ext| url.ends_with(ext)) as bool
+	let image_extensions = ["jpg", "jpeg", "png", "gif", "webp"];
+	image_extensions.iter().any(|ext| url.ends_with(ext)) as bool
 }
 
 #[tokio::main]
@@ -603,26 +608,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 								).await
 							{
 								Ok(button_id) => {
-									if
-										let Err(e) = sqlx
-											::query(
-												r#"
-                                        INSERT INTO buttons_relations (button_id, website_id, links_to_url)
-                                        VALUES ($1, $2, $3)
-                                        ON CONFLICT (button_id, website_id) DO NOTHING
-                                        "#
-											)
-											.bind(button_id)
-											.bind(website_id)
-											.bind(links_to_url_clone)
-											.execute(&pool_clone).await
-									{
-										eprintln!(
-											"Failed to insert button relation for button {} on website {}: {}",
-											button_id,
-											website_id,
-											e
-										);
+									if let Some(id) = button_id {
+										if
+											let Err(e) = sqlx
+												::query(
+													r#"
+											INSERT INTO buttons_relations (button_id, website_id, links_to_url)
+											VALUES ($1, $2, $3)
+											ON CONFLICT (button_id, website_id) DO NOTHING
+											"#
+												)
+												.bind(id)
+												.bind(website_id)
+												.bind(links_to_url_clone)
+												.execute(&pool_clone).await
+										{
+											eprintln!(
+												"Failed to insert button relation for button {} on website {}: {}",
+												id,
+												website_id,
+												e
+											);
+										}
 									}
 								}
 								Err(e) => {
