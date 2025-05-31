@@ -17,6 +17,8 @@ use tokio::sync::Mutex;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
+mod colorize;
+use colorize::ColorAnalyzer;
 
 static PROHIBITED_LINKS: [&str; 30] = [
 	"mailto:",
@@ -204,11 +206,12 @@ async fn initialize_db() -> Result<Pool<Postgres>, sqlx::Error> {
             id SERIAL PRIMARY KEY,
             url TEXT NOT NULL UNIQUE,
             status_code INTEGER,
+			color_tag TEXT,
+			color_average TEXT,
             scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             alt TEXT,
             title TEXT,
-            content BYTEA,
-            is_88x31 BOOLEAN DEFAULT FALSE
+			content BYTEA		
         );
         "#
 		)
@@ -421,12 +424,11 @@ async fn process_button_image(
 	let response = client.get(button_src_url).send().await?;
 	let status_code = response.status().as_u16() as i32;
 	let mut image_content: Option<Vec<u8>> = None;
-	let mut is_88x31 = false;
+	let mut is88x31 = false;
 
 	if response.status().is_success() {
 		let buffer = response.bytes().await?.to_vec();
 		if let Ok(is_standard_size) = check_button(&buffer, button_src_url).await {
-			is_88x31 = is_standard_size;
 			image_content = Some(buffer);
 		} else {
 			eprintln!("Failed to check button dimensions for {}: Image error", button_src_url);
@@ -435,12 +437,24 @@ async fn process_button_image(
 		eprintln!("Failed to fetch button image {}: Status {}", button_src_url, status_code);
 	}
 
+	let (color_tags, color_average) = if let Some(ref content) = image_content {
+		match image::load_from_memory(content) {
+			Ok(img) => {
+				let analysis = ColorAnalyzer::new().analyze_image(&img);
+				(analysis.tags.join(","), analysis.hex_average)
+			}
+			Err(_) => (String::new(), String::new())
+		}
+	} else {
+		(String::new(), String::new())
+	};
+
 	let row = sqlx
 		::query(
 			r#"
-        INSERT INTO buttons (url, status_code, alt, content, is_88x31)
-        VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT (url) DO UPDATE SET status_code = $2, alt = $3, content = $4, is_88x31 = $5
+        INSERT INTO buttons (url, status_code, alt, content, color_tag, color_average)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (url) DO UPDATE SET status_code = $2, alt = $3, content = $4, color_tag = $5, color_average = $6
         RETURNING id
         "#
 		)
@@ -448,7 +462,8 @@ async fn process_button_image(
 		.bind(status_code)
 		.bind(alt)
 		.bind(image_content)
-		.bind(is_88x31)
+		.bind(color_tags)
+		.bind(color_average)
 		.fetch_one(pool).await?;
 
 	Ok(row.get::<i32, _>("id"))

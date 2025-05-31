@@ -59,7 +59,7 @@ async fn search_handler(
 	Query(params): Query<HashMap<String, String>>,
 	State(pool): State<PgPool>
 ) -> Result<Json<Value>, StatusCode> {
-	let query = params.get("query").ok_or(StatusCode::BAD_REQUEST)?;
+	let query = params.get("q").ok_or(StatusCode::BAD_REQUEST)?;
 
 	let ai_url = env::var("AI_URL").map_err(|e| {
 		error!("AI_URL environment variable not set: {}", e);
@@ -81,10 +81,15 @@ async fn search_handler(
 		StatusCode::INTERNAL_SERVER_ERROR
 	})?;
 
-	let vector = vector_data["vector"]
+	let vectors = vector_data["vectors"]
 		.as_array()
 		.ok_or_else(|| {
-			error!("AI service response missing 'vector' array field");
+			error!("AI service response missing 'vectors' array field");
+			StatusCode::INTERNAL_SERVER_ERROR
+		})?[0]
+		.as_array()
+		.ok_or_else(|| {
+			error!("AI service response vectors[0] is not an array");
 			StatusCode::INTERNAL_SERVER_ERROR
 		})?
 		.iter()
@@ -93,7 +98,7 @@ async fn search_handler(
 
 	let vector_string = format!(
 		"[{}]",
-		vector
+		vectors
 			.iter()
 			.map(|v| v.to_string())
 			.collect::<Vec<_>>()
@@ -127,10 +132,10 @@ async fn search_handler(
 			GROUP BY website
 		)
 		SELECT ag.website, ag.total_similarity, ag.matched_types_count, 
-			   ag.matched_types_list, vu.title, vu.description, 
-			   vu.amount_of_buttons, vu.url_id
+			   ag.matched_types_list, w.title, w.description, 
+			   w.amount_of_buttons, w.id
 		FROM aggregated_scores ag
-		JOIN visited_urls vu ON ag.website = vu.path
+		JOIN websites w ON ag.website = w.url
 		WHERE ag.total_similarity >= 0.3
 		ORDER BY ag.total_similarity DESC
 		LIMIT 50"
@@ -152,7 +157,7 @@ async fn search_handler(
 				"amount_of_buttons": row.get::<i32, _>("amount_of_buttons"),
 				"score": row.get::<f64, _>("total_similarity"),
 				"matched_types_count": row.get::<i64, _>("matched_types_count"),
-				"website_id": row.get::<i32, _>("url_id")
+				"website_id": row.get::<i32, _>("id")
 			})
 		})
 		.collect();
@@ -234,16 +239,36 @@ async fn check_indexed_handler(
 	Ok(Json(json!({ "indexed": is_indexed })))
 }
 
-async fn vectorize_handler(State(pool): State<PgPool>) -> Result<Json<Value>, StatusCode> {
-	let response = reqwest
-		::get("http://localhost:8888/vectorize").await
-		.map_err(|_| StatusCode::BAD_GATEWAY)?;
+async fn vectorize_handler(
+	Json(payload): Json<VectorizeRequest>,
+	State(pool): State<PgPool>
+) -> Result<Json<Value>, StatusCode> {
+	let ai_url = env::var("AI_URL").map_err(|e| {
+		error!("AI_URL environment variable not set: {}", e);
+		StatusCode::INTERNAL_SERVER_ERROR
+	})?;
 
-	let vector_data: Value = response.json().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+	let client = reqwest::Client::new();
+	let response = client
+		.post(&format!("{}/vectorize", ai_url))
+		.json(&json!({ "text": payload.text }))
+		.send().await
+		.map_err(|e| {
+			error!("Failed to send request to AI service: {}", e);
+			StatusCode::BAD_GATEWAY
+		})?;
+
+	let vector_data: Value = response.json().await.map_err(|e| {
+		error!("Failed to parse AI service response: {}", e);
+		StatusCode::INTERNAL_SERVER_ERROR
+	})?;
 
 	let vector: Vec<f32> = vector_data["vector"]
 		.as_array()
-		.ok_or(StatusCode::INTERNAL_SERVER_ERROR)?
+		.ok_or_else(|| {
+			error!("AI service response missing 'vector' array field");
+			StatusCode::INTERNAL_SERVER_ERROR
+		})?
 		.iter()
 		.map(|v| v.as_f64().unwrap_or(0.0) as f32)
 		.collect();
@@ -269,8 +294,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		.route("/search", get(search_handler))
 		.route("/random", get(random_website_handler))
 		.route("/retrieveAllButtons", get(retrieve_all_buttons_handler))
-		.route("/check-indexed", get(check_indexed_handler))
-		.route("/vectorize", post(vectorize_handler))
+		.route("/checkIfIndexed", get(check_indexed_handler))
 		.layer(
 			CorsLayer::new()
 				.allow_origin(Any)
@@ -279,7 +303,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		)
 		.with_state(pool);
 
-	let port = env::var("SEARCH_PORT").unwrap_or_else(|_| "8000".to_string());
+	let port = env::var("API_PORT").unwrap_or_else(|_| "8000".to_string());
 	let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
 
 	println!("Server running on port {}", port);
