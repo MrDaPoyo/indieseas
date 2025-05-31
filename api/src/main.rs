@@ -194,7 +194,7 @@ async fn random_website_handler(State(pool): State<PgPool>) -> Result<Json<Value
 	Ok(Json(result))
 }
 
-async fn retrieve_all_buttons_handler(State(pool): State<PgPool>) -> Result<
+async fn retrieve_all_buttons_handler(State(pool): State<PgPool>, Query(params): Query<HashMap<String, String>>) -> Result<
 	Json<Vec<Value>>,
 	StatusCode
 > {
@@ -216,8 +216,98 @@ async fn retrieve_all_buttons_handler(State(pool): State<PgPool>) -> Result<
 			})
 		})
 		.collect();
+	
+	let page: usize = params.get("page")
+		.and_then(|p| p.parse().ok())
+		.unwrap_or(1);
+	let limit: usize = params.get("pageSize")
+		.and_then(|l| l.parse().ok())
+		.unwrap_or(100);
+	
+	let offset = (page - 1) * limit;
+	
+	let total_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM buttons")
+		.fetch_one(&pool).await
+		.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+	
+	if params.contains_key("q") {
+		let search_query = params.get("q").unwrap();
+		let search_query = format!("%{}%", search_query);
+		let query = "SELECT id, url as button_text, color_tag, '' as website_url FROM buttons WHERE url ILIKE $1 ORDER BY id LIMIT $2 OFFSET $3";
+		
+		let rows = sqlx
+			::query(query)
+			.bind(search_query)
+			.bind(limit as i64)
+			.bind(offset as i64)
+			.fetch_all(&pool).await
+			.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-	Ok(Json(buttons))
+		let buttons: Vec<Value> = rows
+			.iter()
+			.map(|row| {
+				json!({
+					"id": row.get::<i32, _>("id"),
+					"button_text": row.get::<String, _>("button_text"),
+					"color_tag": row.get::<Option<String>, _>("color_tag"),
+					"website_url": row.get::<String, _>("website_url")
+				})
+			})
+			.collect();
+		
+		let total_pages = (total_count.0 as f64 / limit as f64).ceil() as usize;
+		
+		let response = json!({
+			"buttons": buttons,
+			"pagination": {
+				"page": page,
+				"limit": limit,
+				"total": total_count.0,
+				"total_pages": total_pages,
+				"has_next": page < total_pages,
+				"has_prev": page > 1
+			}
+		});
+
+		return Ok(Json(vec![response]));
+	}
+	
+	let query = "SELECT id, url as button_text, color_tag, '' as website_url FROM buttons ORDER BY id LIMIT $1 OFFSET $2";
+
+	let rows = sqlx
+		::query(query)
+		.bind(limit as i64)
+		.bind(offset as i64)
+		.fetch_all(&pool).await
+		.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+	let buttons: Vec<Value> = rows
+		.iter()
+		.map(|row| {
+			json!({
+				"id": row.get::<i32, _>("id"),
+				"button_text": row.get::<String, _>("button_text"),
+				"color_tag": row.get::<Option<String>, _>("color_tag"),
+				"website_url": row.get::<String, _>("website_url")
+			})
+		})
+		.collect();
+	
+	let total_pages = (total_count.0 as f64 / limit as f64).ceil() as usize;
+	
+	let response = json!({
+		"buttons": buttons,
+		"pagination": {
+			"page": page,
+			"limit": limit,
+			"total": total_count.0,
+			"total_pages": total_pages,
+			"has_next": page < total_pages,
+			"has_prev": page > 1
+		}
+	});
+
+	Ok(Json(vec![response]))
 }
 
 async fn check_indexed_handler(
