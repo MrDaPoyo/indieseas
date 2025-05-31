@@ -13,15 +13,12 @@ use axum::{
 	extract::{ Query, State },
 	http::{ StatusCode, Method },
 	response::Json,
-	routing::{ get, post },
+	routing::{ get },
 	Router,
 };
 use tower_http::cors::{ CorsLayer, Any };
-use http_body_util::StreamBody;
 use axum::response::Response;
-use axum::http::{header, HeaderMap};
-use tokio_util::io::ReaderStream;
-use std::io::Cursor;
+use axum::http::{header};
 
 #[derive(Debug, Deserialize)]
 struct VectorizeRequest {
@@ -181,19 +178,60 @@ async fn search_handler(
 }
 
 async fn random_website_handler(State(pool): State<PgPool>) -> Result<Json<Value>, StatusCode> {
-	let row: (String, String, Option<String>, i32) = sqlx
+	let row: (String, String, Option<String>, i32, Option<chrono::NaiveDateTime>) = sqlx
 		::query_as(
-			"SELECT url, title, description, amount_of_buttons FROM websites ORDER BY RANDOM() LIMIT 1"
+			"SELECT url, title, description, amount_of_buttons, scraped_at FROM websites WHERE scraped_at IS NOT NULL ORDER BY RANDOM() LIMIT 1"
 		)
 		.fetch_one(&pool).await
-		.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+		.map_err(|e| {
+			error!("Database error in random_website_handler: {}", e);
+			StatusCode::INTERNAL_SERVER_ERROR
+		})?;
 
-	let result =
-		json!({
-		"website": row.0,
-		"title": row.1,
-		"description": row.2,
-		"amount_of_buttons": row.3
+	let url = &row.0;
+	
+	let button_rows = sqlx
+		::query(
+			"SELECT b.id, b.url as button_text, b.color_tag, w.url as found_url, br.links_to_url as links_to, b.color_average, b.scraped_at, b.alt, b.title 
+			 FROM buttons b 
+			 JOIN buttons_relations br ON b.id = br.button_id 
+			 JOIN websites w ON br.website_id = w.id 
+			 WHERE w.url = $1 
+			 LIMIT 50"
+		)
+		.bind(url)
+		.fetch_all(&pool).await
+		.map_err(|e| {
+			error!("Database error fetching buttons in random_website_handler: {}", e);
+			StatusCode::INTERNAL_SERVER_ERROR
+		})?;
+
+	let buttons: Vec<Value> = button_rows
+		.iter()
+		.map(|row| {
+			json!({
+				"id": row.get::<i32, _>("id"),
+				"button_text": row.get::<String, _>("button_text"),
+				"color_tag": row.get::<Option<String>, _>("color_tag"),
+				"found_url": row.get::<Option<String>, _>("found_url"),
+				"links_to": row.get::<Option<String>, _>("links_to"),
+				"color_average": row.get::<Option<String>, _>("color_average"),
+				"scraped_at": row.get::<Option<chrono::NaiveDateTime>, _>("scraped_at"),
+				"alt": row.get::<Option<String>, _>("alt"),
+				"title": row.get::<Option<String>, _>("title")
+			})
+		})
+		.collect();
+
+	let result = json!({
+		"website": {
+			"url": row.0,
+			"title": row.1,
+			"description": row.2,
+			"amount_of_buttons": row.3,
+			"buttons": buttons,
+			"scraped_at": row.4,
+		}
 	});
 
 	Ok(Json(result))
@@ -392,7 +430,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let app = Router::new()
 		.route("/stats", get(stats_handler))
 		.route("/search", get(search_handler))
-		.route("/random", get(random_website_handler))
+		.route("/randomWebsite", get(random_website_handler))
 		.route("/retrieveAllButtons", get(retrieve_all_buttons_handler))
 		.route("/checkIfIndexed", get(check_indexed_handler))
 		.route("/retrieveButton", get(single_button_handler))

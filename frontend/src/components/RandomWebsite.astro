@@ -17,15 +17,17 @@ if (!response.ok) {
     );
 }
 
-const website = (await response.json()).website;
-const formattedDate = new Date(website.scraped_date).toTimeString();
+const randomWebsite = await response.json()
+const website = randomWebsite.website;
+console.log(randomWebsite);
+const formattedDate = new Date(website.scraped_at).toTimeString();
 ---
 <span>
     <a href="/">Back</a> - <a href="/random">Jump!</a>
 </span>
 <div class="website-showcase">
     <h2 class="website-title">
-        <a href={`https://${website.url}`} target="_blank" rel="noopener noreferrer">{website.url}</a>
+        <a href={`https://${website.url}`} target="_blank" rel="noopener noreferrer">{website.title}</a>
     </h2>
     <p class="website-info">Scraped: {formattedDate}</p>
     
@@ -44,13 +46,13 @@ const formattedDate = new Date(website.scraped_date).toTimeString();
             <div class="buttons-container">
                 {website.buttons.map(button => (
                     <div class="button-item">
-                        {button.src && (
+                        {button.found_url && (
                             <a href={button.links_to} target="_blank" rel="noopener noreferrer">
                                 <Image 
-                                    src={button.src} 
+                                    src={`/api/getButton?buttonId=${button.id}`} 
                                     width={88} 
                                     height={31} 
-                                    alt={button.alt || `${website.url} button`} 
+                                    alt={button.alt || button.button_text || `${website.url} button`} 
                                 />
                             </a>
                         )}
