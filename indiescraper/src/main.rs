@@ -286,36 +286,56 @@ async fn insert_website(
 
 	if let Some(title_text) = title {
 		if !title_text.is_empty() {
-			if let Ok(vector) = vectorize_text(&title_text).await {
-				let _ = sqlx
-					::query(
-						r#"
-                    INSERT INTO websites_index (website, embedding, type)
-                    VALUES ($1, $2, $3)
-                    "#
-					)
-					.bind(&url)
-					.bind(vector)
-					.bind("title")
-					.execute(pool).await;
+			match vectorize_text(&title_text).await {
+				Ok(vector) => {
+					if let Err(e) = sqlx
+						::query(
+							r#"
+						INSERT INTO websites_index (website, embedding, type)
+						VALUES ($1, $2, $3)
+						ON CONFLICT DO NOTHING
+						"#
+						)
+						.bind(&url)
+						.bind(vector)
+						.bind("title")
+						.execute(pool).await {
+						eprintln!("Failed to insert title embedding for {}: {}", url, e);
+					} else {
+						println!("Successfully inserted title embedding for: {}", url);
+					}
+				}
+				Err(e) => {
+					eprintln!("Failed to vectorize title for {}: {}", url, e);
+				}
 			}
 		}
 	}
 
 	if let Some(description_text) = description {
 		if !description_text.is_empty() {
-			if let Ok(vector) = vectorize_text(&description_text).await {
-				let _ = sqlx
-					::query(
-						r#"
-                    INSERT INTO websites_index (website, embedding, type)
-                    VALUES ($1, $2, $3)
-                    "#
-					)
-					.bind(&url)
-					.bind(vector)
-					.bind("description")
-					.execute(pool).await;
+			match vectorize_text(&description_text).await {
+				Ok(vector) => {
+					if let Err(e) = sqlx
+						::query(
+							r#"
+						INSERT INTO websites_index (website, embedding, type)
+						VALUES ($1, $2, $3)
+						ON CONFLICT DO NOTHING
+						"#
+						)
+						.bind(&url)
+						.bind(vector)
+						.bind("description")
+						.execute(pool).await {
+						eprintln!("Failed to insert description embedding for {}: {}", url, e);
+					} else {
+						println!("Successfully inserted description embedding for: {}", url);
+					}
+				}
+				Err(e) => {
+					eprintln!("Failed to vectorize description for {}: {}", url, e);
+				}
 			}
 		}
 	}
@@ -329,24 +349,35 @@ async fn insert_website(
 			.collect();
 
 		for (i, chunk) in chunks.iter().enumerate() {
-			if let Ok(vector) = vectorize_text(chunk).await {
-				let _ = sqlx
-					::query(
-						r#"
-                    INSERT INTO websites_index (website, embedding, type)
-                    VALUES ($1, $2, $3)
-                    "#
-					)
-					.bind(&url)
-					.bind(vector)
-					.bind(format!("raw_text_chunk_{}", i))
-					.execute(pool).await;
+			match vectorize_text(chunk).await {
+				Ok(vector) => {
+					if let Err(e) = sqlx
+						::query(
+							r#"
+						INSERT INTO websites_index (website, embedding, type)
+						VALUES ($1, $2, $3)
+						ON CONFLICT DO NOTHING
+						"#
+						)
+						.bind(&url)
+						.bind(vector)
+						.bind(format!("raw_text_chunk_{}", i))
+						.execute(pool).await {
+						eprintln!("Failed to insert raw text chunk {} embedding for {}: {}", i, url, e);
+					} else {
+						println!("Successfully inserted raw text chunk {} embedding for: {}", i, url);
+					}
+				}
+				Err(e) => {
+					eprintln!("Failed to vectorize raw text chunk {} for {}: {}", i, url, e);
+				}
 			}
 		}
 	}
 
 	Ok(website_id)
 }
+
 
 async fn vectorize_text(text: &str) -> Result<Vec<f32>, Box<dyn Error + Send + Sync>> {
 	let ai_url = env::var("AI_URL").unwrap_or_else(|_| "http://localhost:8888".to_string());
@@ -359,12 +390,20 @@ async fn vectorize_text(text: &str) -> Result<Vec<f32>, Box<dyn Error + Send + S
 
 	let vector_data: serde_json::Value = response.json().await?;
 
-	let vector: Vec<f32> = vector_data["vector"]
+	let vectors: Vec<Vec<f32>> = vector_data["vectors"]
 		.as_array()
-		.ok_or("Invalid vector format")?
+		.ok_or("Invalid vectors format")?
 		.iter()
-		.map(|v| v.as_f64().unwrap_or(0.0) as f32)
+		.map(|v| {
+			v.as_array()
+				.unwrap_or(&vec![])
+				.iter()
+				.map(|f| f.as_f64().unwrap_or(0.0) as f32)
+				.collect()
+		})
 		.collect();
+
+	let vector = vectors.into_iter().next().ok_or("No vector returned")?;
 
 	Ok(vector)
 }
