@@ -46,7 +46,7 @@ Default frontend port: 8080
 Start the API server:
 
 ```bash
-PORT=8080 node ./dist/server/entry.mjs
+PORT=80 node ./dist/server/entry.mjs
 ```
 
 Default API port: 8000

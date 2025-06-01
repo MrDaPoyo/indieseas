@@ -26,10 +26,14 @@ mod colorize;
 use robots::is_allowed;
 use colorize::ColorAnalyzer;
 
-static PROHIBITED_LINKS: [&str; 31] = [
+static PROHIBITED_LINKS: [&str; 35] = [
 	"mailto:",
 	"tel:",
 	"javascript:",
+	"github.com",
+	"gitlab.com",
+	"bitbucket.org",
+	"reddit.com",
 	"discord.com",
 	"discord.gg",
 	"steamcommunity.com",
@@ -357,8 +361,6 @@ async fn insert_website(
 							.execute(pool).await
 					{
 						eprintln!("Failed to insert title embedding for {}: {}", url, e);
-					} else {
-						println!("Successfully inserted title embedding for: {}", url);
 					}
 				}
 				Err(e) => {
@@ -387,8 +389,6 @@ async fn insert_website(
 							.execute(pool).await
 					{
 						eprintln!("Failed to insert description embedding for {}: {}", url, e);
-					} else {
-						println!("Successfully inserted description embedding for: {}", url);
 					}
 				}
 				Err(e) => {
@@ -428,12 +428,6 @@ async fn insert_website(
 							i,
 							url,
 							e
-						);
-					} else {
-						println!(
-							"Successfully inserted raw text chunk {} embedding for: {}",
-							i,
-							url
 						);
 					}
 				}
@@ -546,7 +540,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let visited: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
 	let scraped_count: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
 	let website_counts: Arc<Mutex<HashMap<String, usize>>> = Arc::new(Mutex::new(HashMap::new()));
+	let subfolder_counts: Arc<Mutex<HashMap<String, usize>>> = Arc::new(Mutex::new(HashMap::new()));
 	const MAX_PAGES_PER_WEBSITE: usize = 75;
+	const MAX_PAGES_PER_SUBFOLDER: usize = 10;
 	const MAX_CONCURRENT_TASKS: usize = 10;
 	let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_TASKS));
 
@@ -603,6 +599,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			let visited_clone = visited.clone();
 			let scraped_count_clone = scraped_count.clone();
 			let website_counts_clone = website_counts.clone();
+			let subfolder_counts_clone = subfolder_counts.clone();
 
 			join_set.spawn(async move {
 				let _permit = permit;
@@ -613,13 +610,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 				
 				visited_clone.lock().await.insert(url.clone());
 				
-				let domain = url::Url::parse(&url).ok()
+				let parsed_url = url::Url::parse(&url).ok();
+				let domain = parsed_url.as_ref()
 					.and_then(|u| u.host_str().map(|s| s.to_string()));
 				
+				let subfolder = parsed_url.as_ref()
+					.map(|u| {
+						let path = u.path();
+						let segments: Vec<&str> = path.trim_matches('/').split('/').collect();
+						if segments.len() > 1 {
+							format!("{}/{}", u.host_str().unwrap_or(""), segments[0])
+						} else {
+							u.host_str().unwrap_or("").to_string()
+						}
+					});
+				
+				// Check domain limit
 				if let Some(domain) = &domain {
 					let mut counts = website_counts_clone.lock().await;
 					let count = counts.entry(domain.clone()).or_insert(0);
 					if *count >= MAX_PAGES_PER_WEBSITE {
+						return;
+					}
+					*count += 1;
+				}
+				
+				// Check subfolder limit
+				if let Some(subfolder_key) = &subfolder {
+					let mut subfolder_counts = subfolder_counts_clone.lock().await;
+					let count = subfolder_counts.entry(subfolder_key.clone()).or_insert(0);
+					if *count >= MAX_PAGES_PER_SUBFOLDER {
 						return;
 					}
 					*count += 1;
