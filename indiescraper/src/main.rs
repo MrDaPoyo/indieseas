@@ -699,7 +699,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 														}
 													},
 													Ok(None) => {},
-													Err(e) => eprintln!("Failed to process button {}: {}", button_details.src, e),
+													Err(e) => {}
 												}
 											},
 											Ok(_) => {}, // Button already exists, skip processing
