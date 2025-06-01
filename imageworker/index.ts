@@ -15,6 +15,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    new URL(decodedUrl);
+  } catch {
+    return res.status(400).json({ error: 'Invalid URL format.' });
+  }
+
+  try {
     const response = await fetch(decodedUrl, {
       method: 'GET',
       headers: { 'User-Agent': 'VercelImageFetcher/1.0' }
