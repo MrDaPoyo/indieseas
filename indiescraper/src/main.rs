@@ -443,8 +443,6 @@ async fn process_button_image(
 	alt: Option<String>,
 	button_links_to: Option<String>
 ) -> Result<Option<i32>, Box<dyn Error + Send + Sync>> {
-	sleep(Duration::from_millis(500)).await;
-
 	let client = reqwest::Client::new();
 	let response = client.get(button_src_url).send().await?;
 	let status_code = response.status().as_u16() as i32;
@@ -528,7 +526,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let pb_clone = pb.clone();
 	tokio::spawn(async move {
 		loop {
-			tokio::time::sleep(Duration::from_millis(500)).await;
+			tokio::time::sleep(Duration::from_millis(200)).await;
 			let pages = *scraped_count_for_progress.lock().await;
 			let buttons = *button_count_for_progress.lock().await;
 			let elapsed = start_time.elapsed().as_secs_f64();
@@ -770,7 +768,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 				join_set.join_next().await;
 			}
 		} else {
-			sleep(Duration::from_millis(100)).await;
+			sleep(Duration::from_millis(10)).await;
 			if join_set.is_empty() {
 				break;
 			}
