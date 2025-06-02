@@ -494,7 +494,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	const MAX_CONCURRENT_TASKS: usize = 10;
 	let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_TASKS));
 
-	if (args.len() < 1 || args[1] == "--clean" || args[1] == "-c" && args.len() == 2) {
+	if (args.len() < 2 || args[1] == "--clean" || args[1] == "-c" && args.len() == 2) {
 		if args.len() > 2 {
 			println!("Cleaning links containing blacklisted items or provided arguments...");
 			
