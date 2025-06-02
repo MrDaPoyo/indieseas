@@ -26,9 +26,10 @@ use colorize::ColorAnalyzer;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Instant;
 
-static PROHIBITED_LINKS: [&str; 38] = [
+static PROHIBITED_LINKS: [&str; 39] = [
 	"mailto:",
 	"tel:",
+	"itch.io",
 	"archlinux.org",
 	"wiki.archlinux.org",
 	"osu.ppy.sh",
