@@ -26,7 +26,7 @@ use colorize::ColorAnalyzer;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Instant;
 
-static PROHIBITED_LINKS: [&str; 39] = [
+static PROHIBITED_LINKS: [&str; 40] = [
 	"mailto:",
 	"tel:",
 	"itch.io",
@@ -66,6 +66,7 @@ static PROHIBITED_LINKS: [&str; 39] = [
 	"goo.gl",
 	"archive.org",
 	"ftp://",
+	"bsky.app",
 ];
 
 static SCRAPER_WORKER: Lazy<String> = Lazy::new(|| {
