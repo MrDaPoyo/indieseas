@@ -8,7 +8,6 @@ use image;
 use image::GenericImageView;
 use once_cell::sync::Lazy;
 use serde_derive::{ Deserialize, Serialize };
-use serde_json::from_str;
 use serde_json::Value;
 use std::collections::{ HashMap, HashSet, VecDeque };
 use std::env;
@@ -19,7 +18,6 @@ use tokio::sync::Mutex;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
-use urlencoding::encode;
 
 mod robots;
 mod colorize;
@@ -117,22 +115,6 @@ struct JsonButtonDetail {
 struct JsonLinkDetail {
 	href: Option<String>,
 	text: String,
-}
-
-#[derive(Deserialize, Debug)]
-struct WebsiteData<ButtonDetails, LinkDetails> {
-	buttons: HashMap<String, ButtonDetails>,
-	title: String,
-	description: String,
-	raw_text: String,
-	links: Vec<LinkDetails>,
-}
-
-#[derive(Deserialize, Debug)]
-struct ButtonDetails {
-	src: String,
-	links_to: Option<String>,
-	alt: String,
 }
 
 async fn is_url_already_scraped(pool: &Pool<Postgres>, url: &str) -> Result<bool, sqlx::Error> {
@@ -504,6 +486,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let button_count: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
 	let website_counts: Arc<Mutex<HashMap<String, usize>>> = Arc::new(Mutex::new(HashMap::new()));
 	let subfolder_counts: Arc<Mutex<HashMap<String, usize>>> = Arc::new(Mutex::new(HashMap::new()));
+	let latest_scraped_url: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
 	const MAX_PAGES_PER_WEBSITE: usize = 75;
 	const MAX_PAGES_PER_SUBFOLDER: usize = 10;
 	const MAX_CONCURRENT_TASKS: usize = 10;
@@ -513,7 +496,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let pb = ProgressBar::new(100000);
 	pb.set_style(
 		ProgressStyle::default_bar()
-			.template("{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} Pages | {msg}")
+			.template("{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos:>4}/{len:4} Pages | {msg}")
 			.unwrap()
 			.progress_chars("##-"),
 	);
@@ -521,6 +504,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let start_time = Instant::now();
 	let scraped_count_for_progress = scraped_count.clone();
 	let button_count_for_progress = button_count.clone();
+	let latest_scraped_url_for_progress = latest_scraped_url.clone();
 
 	// Spawn progress update task
 	let pb_clone = pb.clone();
@@ -529,15 +513,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			tokio::time::sleep(Duration::from_millis(200)).await;
 			let pages = *scraped_count_for_progress.lock().await;
 			let buttons = *button_count_for_progress.lock().await;
+			let latest_url = latest_scraped_url_for_progress.lock().await.clone();
 			let elapsed = start_time.elapsed().as_secs_f64();
 			
-			let pages_per_sec = if elapsed > 0.0 { pages as f64 / elapsed } else { 0.0 };
 			let buttons_per_sec = if elapsed > 0.0 { buttons as f64 / elapsed } else { 0.0 };
 			
 			pb_clone.set_position(pages as u64);
 			pb_clone.set_message(format!(
-				"Buttons: {} ({:.1}/s) | Pages/s: {:.1}",
-				buttons, buttons_per_sec, pages_per_sec
+				"Buttons: {} ({:.1}/s) | {}",
+				buttons, buttons_per_sec, latest_url
 			));
 		}
 	});
@@ -607,6 +591,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			let button_count_clone = button_count.clone();
 			let website_counts_clone = website_counts.clone();
 			let subfolder_counts_clone = subfolder_counts.clone();
+			let latest_scraped_url_clone = latest_scraped_url.clone();
 
 			join_set.spawn(async move {
 				let _permit = permit;
@@ -656,6 +641,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 				match ScraperResponse::get(&url).await {
 					Ok(scraper_response) => {
+						*latest_scraped_url_clone.lock().await = url.clone();
+						
 						match insert_website(
 							&pool_clone,
 							&url,
