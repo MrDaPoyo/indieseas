@@ -494,6 +494,73 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	const MAX_CONCURRENT_TASKS: usize = 10;
 	let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_TASKS));
 
+	if (args.len() < 1 || args[1] == "--clean" || args[1] == "-c" && args.len() == 2) {
+		if args.len() > 2 {
+			println!("Cleaning links containing blacklisted items or provided arguments...");
+			
+			let mut blacklisted_items = PROHIBITED_LINKS.to_vec();
+			
+			for arg in &args[2..] {
+				blacklisted_items.push(arg.as_str());
+			}
+			
+			for item in &blacklisted_items {
+				sqlx::query(
+					"DELETE FROM buttons_relations WHERE button_id IN (SELECT id FROM buttons WHERE url LIKE $1)"
+				)
+				.bind(format!("%{}%", item))
+				.execute(&pool).await?;
+				
+				sqlx::query(
+					"DELETE FROM buttons_relations WHERE website_id IN (SELECT id FROM websites WHERE url LIKE $1)"
+				)
+				.bind(format!("%{}%", item))
+				.execute(&pool).await?;
+				
+				let affected_websites = sqlx::query_scalar::<_, i64>(
+					"SELECT COUNT(*) FROM websites WHERE url LIKE $1"
+				)
+				.bind(format!("%{}%", item))
+				.fetch_optional(&pool).await?
+				.unwrap_or(0);
+				
+				sqlx::query(
+					"DELETE FROM websites WHERE url LIKE $1"
+				)
+				.bind(format!("%{}%", item))
+				.execute(&pool).await?;
+				
+				let affected_buttons = sqlx::query_scalar::<_, i64>(
+					"SELECT COUNT(*) FROM buttons WHERE url LIKE $1"
+				)
+				.bind(format!("%{}%", item))
+				.fetch_optional(&pool).await?
+				.unwrap_or(0);
+				
+				sqlx::query(
+					"DELETE FROM buttons WHERE url LIKE $1"
+				)
+				.bind(format!("%{}%", item))
+				.execute(&pool).await?;
+				
+				if affected_websites > 0 || affected_buttons > 0 {
+					println!("Removed {} websites and {} buttons containing '{}'", affected_websites, affected_buttons, item);
+				}
+			}
+			
+			sqlx::query(
+				"DELETE FROM buttons_relations WHERE button_id NOT IN (SELECT id FROM buttons) OR website_id NOT IN (SELECT id FROM websites)"
+			).execute(&pool).await?;
+			
+			sqlx::query(
+				"DELETE FROM websites_index WHERE website NOT IN (SELECT url FROM websites)"
+			).execute(&pool).await?;
+			
+			println!("Database cleanup completed.");
+		}
+		return Ok(());
+	}
+
 
 	let pb = ProgressBar::new(100000);
 	pb.set_style(
