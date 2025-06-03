@@ -26,7 +26,7 @@ use colorize::ColorAnalyzer;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Instant;
 
-static PROHIBITED_LINKS: [&str; 40] = [
+static PROHIBITED_LINKS: [&str; 42] = [
 	"mailto:",
 	"tel:",
 	"itch.io",
@@ -64,6 +64,8 @@ static PROHIBITED_LINKS: [&str; 40] = [
 	"bit.ly",
 	"tinyurl.com",
 	"goo.gl",
+	"google.com",
+	"g.co",
 	"archive.org",
 	"ftp://",
 	"bsky.app",
@@ -495,85 +497,89 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_TASKS));
 
 	if (args.len() < 2 || args[1] == "--clean" || args[1] == "-c") {
+		println!("Cleaning links containing blacklisted items...");
+		
+		let mut blacklisted_items = PROHIBITED_LINKS.to_vec();
+		
 		if args.len() > 2 {
-			println!("Cleaning links containing blacklisted items or provided arguments...");
-			
-			let mut blacklisted_items = PROHIBITED_LINKS.to_vec();
-			
 			for arg in &args[2..] {
 				blacklisted_items.push(arg.as_str());
 			}
+		}
+		
+		for item in &blacklisted_items {
+			sqlx::query(
+				"DELETE FROM buttons_relations WHERE button_id IN (SELECT id FROM buttons WHERE url LIKE $1)"
+			)
+			.bind(format!("%{}%", item))
+			.execute(&pool).await?;
 			
-			for item in &blacklisted_items {
-				sqlx::query(
-					"DELETE FROM buttons_relations WHERE button_id IN (SELECT id FROM buttons WHERE url LIKE $1)"
-				)
-				.bind(format!("%{}%", item))
-				.execute(&pool).await?;
-				
-				sqlx::query(
-					"DELETE FROM buttons_relations WHERE website_id IN (SELECT id FROM websites WHERE url LIKE $1)"
-				)
-				.bind(format!("%{}%", item))
-				.execute(&pool).await?;
-				
-				let affected_websites = sqlx::query_scalar::<_, i64>(
-					"SELECT COUNT(*) FROM websites WHERE url LIKE $1"
-				)
-				.bind(format!("%{}%", item))
-				.fetch_optional(&pool).await?
-				.unwrap_or(0);
-				
-				sqlx::query(
-					"DELETE FROM websites WHERE url LIKE $1"
-				)
-				.bind(format!("%{}%", item))
-				.execute(&pool).await?;
-				
-				let affected_buttons = sqlx::query_scalar::<_, i64>(
-					"SELECT COUNT(*) FROM buttons WHERE url LIKE $1"
-				)
-				.bind(format!("%{}%", item))
-				.fetch_optional(&pool).await?
-				.unwrap_or(0);
-				
-				sqlx::query(
-					"DELETE FROM buttons WHERE url LIKE $1"
-				)
-				.bind(format!("%{}%", item))
-				.execute(&pool).await?;
-				
-				if affected_websites > 0 || affected_buttons > 0 {
-					println!("Removed {} websites and {} buttons containing '{}'", affected_websites, affected_buttons, item);
-				}
+			sqlx::query(
+				"DELETE FROM buttons_relations WHERE website_id IN (SELECT id FROM websites WHERE url LIKE $1)"
+			)
+			.bind(format!("%{}%", item))
+			.execute(&pool).await?;
+			
+			let affected_websites = sqlx::query_scalar::<_, i64>(
+				"SELECT COUNT(*) FROM websites WHERE url LIKE $1"
+			)
+			.bind(format!("%{}%", item))
+			.fetch_optional(&pool).await?
+			.unwrap_or(0);
+			
+			sqlx::query(
+				"DELETE FROM websites WHERE url LIKE $1"
+			)
+			.bind(format!("%{}%", item))
+			.execute(&pool).await?;
+			
+			let affected_buttons = sqlx::query_scalar::<_, i64>(
+				"SELECT COUNT(*) FROM buttons WHERE url LIKE $1"
+			)
+			.bind(format!("%{}%", item))
+			.fetch_optional(&pool).await?
+			.unwrap_or(0);
+			
+			sqlx::query(
+				"DELETE FROM buttons WHERE url LIKE $1"
+			)
+			.bind(format!("%{}%", item))
+			.execute(&pool).await?;
+			
+			if affected_websites > 0 || affected_buttons > 0 {
+				println!("Removed {} websites and {} buttons containing '{}'", affected_websites, affected_buttons, item);
 			}
 		}
 
-			sqlx::query(
-				"UPDATE websites SET url = RTRIM(url, '/') WHERE url ~ '\\.(html?|asp|aspx)/$'"
-			).execute(&pool).await?;
+		// Fix malformed URLs with trailing slashes after file extensions
+		let malformed_urls = sqlx::query_as::<_, (String,)>(
+			"SELECT url FROM websites WHERE url ~ '\\.(html|htm|php|asp|aspx|jsp|cgi|pl|py|rb|js|css|xml|json|txt|pdf|doc|docx|zip|tar|gz|rar|7z|exe|dmg|pkg|deb|rpm)/$'"
+		)
+		.fetch_all(&pool).await?;
 
-			sqlx::query(
-				"UPDATE buttons SET url = RTRIM(url, '/') WHERE url ~ '\\.(html?|asp|aspx)/$'"
-			).execute(&pool).await?;
-
-			sqlx::query(
-				"UPDATE buttons_relations SET links_to_url = RTRIM(links_to_url, '/') WHERE links_to_url ~ '\\.(html?|asp|aspx)/$'"
-			).execute(&pool).await?;
-
-			sqlx::query(
-				"UPDATE websites_index SET website = RTRIM(website, '/') WHERE website ~ '\\.(html?|asp|aspx)/$'"
-			).execute(&pool).await?;
-			
-			sqlx::query(
-				"DELETE FROM buttons_relations WHERE button_id NOT IN (SELECT id FROM buttons) OR website_id NOT IN (SELECT id FROM websites)"
-			).execute(&pool).await?;
-			
-			sqlx::query(
-				"DELETE FROM websites_index WHERE website NOT IN (SELECT url FROM websites)"
-			).execute(&pool).await?;
-			
-			println!("Database cleanup completed.");
+		for (url,) in malformed_urls {
+			let corrected_url = url.trim_end_matches('/');
+			if corrected_url != url {
+				println!("Fixing malformed URL: {} -> {}", url, corrected_url);
+				
+				sqlx::query("UPDATE websites SET url = $1 WHERE url = $2")
+					.bind(corrected_url)
+					.bind(&url)
+					.execute(&pool).await?;
+				
+				sqlx::query("UPDATE websites_index SET website = $1 WHERE website = $2")
+					.bind(corrected_url)
+					.bind(&url)
+					.execute(&pool).await?;
+				
+				sqlx::query("UPDATE buttons_relations SET links_to_url = $1 WHERE links_to_url = $2")
+					.bind(corrected_url)
+					.bind(&url)
+					.execute(&pool).await?;
+			}
+		}
+		
+		println!("Database cleanup completed.");
 		return Ok(());
 	}
 
