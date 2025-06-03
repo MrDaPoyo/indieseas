@@ -1,4 +1,3 @@
-use serde::{ Deserialize, Serialize };
 use serde_json::{ json, Value };
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Row;
@@ -19,16 +18,6 @@ use axum::{
 use tower_http::cors::{ CorsLayer, Any };
 use axum::response::Response;
 use axum::http::{header};
-
-#[derive(Debug, Deserialize)]
-struct VectorizeRequest {
-	text: String,
-}
-
-#[derive(Debug, Serialize)]
-struct VectorizeResponse {
-	vector: Vec<f32>,
-}
 
 async fn stats_handler(State(pool): State<PgPool>) -> Result<
 	Json<HashMap<String, i64>>,

@@ -180,7 +180,7 @@ impl ScraperResponse {
     }
 }
 
-async fn check_button(buffer: &[u8], url: &str) -> Result<bool, image::ImageError> {
+async fn check_button(buffer: &[u8], _url: &str) -> Result<bool, image::ImageError> {
 	let img = image::load_from_memory(buffer)?;
 	let (width, height) = img.dimensions();
 	if width == 88 && height == 31 {
@@ -427,7 +427,7 @@ async fn process_button_image(
 	pool: &Pool<Postgres>,
 	button_src_url: &str,
 	alt: Option<String>,
-	button_links_to: Option<String>
+	_button_links_to: Option<String>
 ) -> Result<Option<i32>, Box<dyn Error + Send + Sync>> {
 	let client = reqwest::Client::new();
 	let response = client.get(button_src_url).send().await?;
@@ -496,7 +496,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	const MAX_CONCURRENT_TASKS: usize = 10;
 	let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_TASKS));
 
-	if (args.len() < 2 || args[1] == "--clean" || args[1] == "-c") {
+	if args.len() < 2 || args[1] == "--clean" || args[1] == "-c" {
 		println!("Cleaning links containing blacklisted items...");
 		
 		let mut blacklisted_items = PROHIBITED_LINKS.to_vec();
