@@ -562,17 +562,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			if corrected_url != url {
 				println!("Fixing malformed URL: {} -> {}", url, corrected_url);
 				
-				sqlx::query("UPDATE websites SET url = $1 WHERE url = $2")
+				sqlx::query("UPDATE websites SET url = $1 WHERE url = $2 ON CONFLICT (url) DO UPDATE SET url = $1")
 					.bind(corrected_url)
 					.bind(&url)
 					.execute(&pool).await?;
 				
-				sqlx::query("UPDATE websites_index SET website = $1 WHERE website = $2")
+				sqlx::query("UPDATE websites_index SET website = $1 WHERE website = $2 ON CONFLICT (website) DO UPDATE SET website = $1")
 					.bind(corrected_url)
 					.bind(&url)
 					.execute(&pool).await?;
 				
-				sqlx::query("UPDATE buttons_relations SET links_to_url = $1 WHERE links_to_url = $2")
+				sqlx::query("UPDATE buttons_relations SET links_to_url = $1 WHERE links_to_url = $2 ON CONFLICT (links_to_url) DO UPDATE SET links_to_url = $1")
 					.bind(corrected_url)
 					.bind(&url)
 					.execute(&pool).await?;
