@@ -560,22 +560,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		for (url,) in malformed_urls {
 			let corrected_url = url.trim_end_matches('/');
 			if corrected_url != url {
-				println!("Fixing malformed URL: {} -> {}", url, corrected_url);
+				let exists = sqlx::query_scalar::<_, bool>(
+					"SELECT EXISTS(SELECT 1 FROM websites WHERE url = $1)"
+				)
+				.bind(corrected_url)
+				.fetch_one(&pool).await?;
 				
-				sqlx::query("UPDATE websites SET url = $1 WHERE url = $2")
-					.bind(corrected_url)
-					.bind(&url)
-					.execute(&pool).await?;
-				
-				sqlx::query("UPDATE websites_index SET website = $1 WHERE website = $2")
-					.bind(corrected_url)
-					.bind(&url)
-					.execute(&pool).await?;
-				
-				sqlx::query("UPDATE buttons_relations SET links_to_url = $1 WHERE links_to_url = $2")
-					.bind(corrected_url)
-					.bind(&url)
-					.execute(&pool).await?;
+				if exists {
+					println!("Deleting malformed URL {} (corrected version already exists: {})", url, corrected_url);
+					
+					sqlx::query("DELETE FROM websites_index WHERE website = $1")
+						.bind(&url)
+						.execute(&pool).await?;
+					
+					sqlx::query("DELETE FROM buttons_relations WHERE website_id IN (SELECT id FROM websites WHERE url = $1)")
+						.bind(&url)
+						.execute(&pool).await?;
+					
+					sqlx::query("DELETE FROM websites WHERE url = $1")
+						.bind(&url)
+						.execute(&pool).await?;
+				} else {
+					println!("Fixing malformed URL: {} -> {}", url, corrected_url);
+					
+					sqlx::query("UPDATE websites SET url = $1 WHERE url = $2")
+						.bind(corrected_url)
+						.bind(&url)
+						.execute(&pool).await?;
+					
+					sqlx::query("UPDATE websites_index SET website = $1 WHERE website = $2")
+						.bind(corrected_url)
+						.bind(&url)
+						.execute(&pool).await?;
+					
+					sqlx::query("UPDATE buttons_relations SET links_to_url = $1 WHERE links_to_url = $2")
+						.bind(corrected_url)
+						.bind(&url)
+						.execute(&pool).await?;
+				}
 			}
 		}
 		
