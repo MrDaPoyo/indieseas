@@ -494,7 +494,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	const MAX_CONCURRENT_TASKS: usize = 10;
 	let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_TASKS));
 
-	if (args.len() < 2 || args[1] == "--clean" || args[1] == "-c" && args.len() == 2) {
+	if (args.len() < 2 || args[1] == "--clean" || args[1] == "-c") {
 		if args.len() > 2 {
 			println!("Cleaning links containing blacklisted items or provided arguments...");
 			
@@ -547,6 +547,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 					println!("Removed {} websites and {} buttons containing '{}'", affected_websites, affected_buttons, item);
 				}
 			}
+		}
+
+			sqlx::query(
+				"UPDATE websites SET url = RTRIM(url, '/') WHERE url ~ '\\.(html?|asp|aspx)/$'"
+			).execute(&pool).await?;
+
+			sqlx::query(
+				"UPDATE buttons SET url = RTRIM(url, '/') WHERE url ~ '\\.(html?|asp|aspx)/$'"
+			).execute(&pool).await?;
+
+			sqlx::query(
+				"UPDATE buttons_relations SET links_to_url = RTRIM(links_to_url, '/') WHERE links_to_url ~ '\\.(html?|asp|aspx)/$'"
+			).execute(&pool).await?;
+
+			sqlx::query(
+				"UPDATE websites_index SET website = RTRIM(website, '/') WHERE website ~ '\\.(html?|asp|aspx)/$'"
+			).execute(&pool).await?;
 			
 			sqlx::query(
 				"DELETE FROM buttons_relations WHERE button_id NOT IN (SELECT id FROM buttons) OR website_id NOT IN (SELECT id FROM websites)"
@@ -557,7 +574,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			).execute(&pool).await?;
 			
 			println!("Database cleanup completed.");
-		}
 		return Ok(());
 	}
 
@@ -635,9 +651,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		return Ok(());
 	}
 
-	for url in urls_to_scrape {
+	for mut url in urls_to_scrape {
 		if !url.ends_with("/") {
-			let url = format!("{}/", url);
+			if !url.ends_with(".php") && !url.ends_with(".html") && !url.ends_with(".htm") && !url.ends_with(".asp") && !url.ends_with(".aspx") {
+				url = format!("{}/", url);
+			}
 			queue.lock().await.push_back(url);
 		} else {
 			queue.lock().await.push_back(url);
