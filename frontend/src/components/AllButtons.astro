@@ -13,13 +13,12 @@ const pageSizeCookie = Astro.cookies.get("page_size")?.value;
 
 if (pageSizeParam) {
 	pageSize = parseInt(pageSizeParam);
-	// Update cookie if URL parameter is present
 	Astro.cookies.set("page_size", pageSize.toString());
 } else if (pageSizeCookie) {
 	pageSize = parseInt(pageSizeCookie);
 } else {
-	pageSize = 200; // Default value
-	Astro.cookies.set("page_size", "200"); // Set cookie to default
+	pageSize = 200;
+	Astro.cookies.set("page_size", "200");
 }
 
 console.log("Page size:", pageSize);
@@ -32,8 +31,8 @@ if (query && query.trim() !== "") {
 		new URL(Astro.url.origin + "/api/buttonSearch").href +
 		"?q=" + encodeURIComponent(query) + 
 		"&pageSize=" + (pageSize || Astro.url.searchParams.get("pageSize") || '10') +
-		(isColorFilter ? `&color=${encodeURIComponent(colorParam || false)}&page=${page}` : "");
-	
+		(isColorFilter ? `&color=true&page=${page}` : `&page=${page}`);
+
 	const buttonSearchResponse = await fetch(targetUrl, {
 		method: "GET",
 		headers: {
@@ -48,8 +47,8 @@ if (query && query.trim() !== "") {
 	}
 
 	results = await buttonSearchResponse.json();
-	buttonsList = results.results.buttons || [];
-	pagination = results.results.pagination || {
+	buttonsList = await results.buttons || [];
+	pagination = await results.pagination || {
 		currentPage: 1,
 		totalPages: 1,
 		totalButtons: buttonsList.length,
@@ -62,7 +61,7 @@ if (query && query.trim() !== "") {
 	const response = await fetch(
 		new URL(
 			Astro.url.origin +
-				`/api/allButtons?page=${Astro.url.searchParams.get("page") || 1}&pageSize=${pageSize || Astro.url.searchParams.get("pageSize")}`
+				`/api/buttonSearch?page=${Astro.url.searchParams.get("page") || 1}&pageSize=${pageSize || Astro.url.searchParams.get("pageSize")}`
 		).href,
 		{
 			method: "GET",
@@ -244,9 +243,9 @@ const queryMessage = query
 	{
 		buttonsList.map((button: any) => (
 			<Button
-				src={button.src}
+				src={button.button_text}
 				image={"http://" + Astro.url.host + "/api/getButton?buttonId=" + button.id}
-				links_to={button.links_to}
+				links_to={button.website_url}
 				alt={button.alt}
 			/>
 		))

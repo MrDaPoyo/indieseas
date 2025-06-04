@@ -141,9 +141,13 @@ import { ClientRouter, slide } from "astro:transitions";
 		transition: transform 0.2s cubic-bezier(0.68, -0.55, 0.265, 1.55);
 	}
 	button:hover,
-	input[type="submit"]:hover, select:hover {
+	input[type="submit"]:hover {
 		border-color: var(--secondary);
-		transform: scale(1.2) rotate(5deg);
+	}
+
+	button:hover,
+	input[type="submit"]:hover {
+		transform: scale(1.1) rotate(5deg);
 	}
 
 	.button-88x31 {
