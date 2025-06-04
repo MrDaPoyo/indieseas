@@ -17,8 +17,7 @@ if (!response.ok) {
     );
 }
 
-const randomWebsite = await response.json()
-const website = randomWebsite.website;
+const website = await response.json()
 const formattedDate = new Date(website.scraped_at).toTimeString();
 ---
 <span>
