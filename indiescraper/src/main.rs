@@ -26,7 +26,7 @@ use colorize::ColorAnalyzer;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Instant;
 
-static PROHIBITED_LINKS: [&str; 42] = [
+static PROHIBITED_LINKS: [&str; 45] = [
 	"mailto:",
 	"tel:",
 	"itch.io",
@@ -61,6 +61,9 @@ static PROHIBITED_LINKS: [&str; 42] = [
 	"t.me",
 	"x.com",
 	"t.co",
+	"g.co",
+	"microsoft.com",
+	"apple.com",
 	"bit.ly",
 	"tinyurl.com",
 	"goo.gl",
@@ -276,7 +279,11 @@ async fn insert_website(
 	description: Option<String>,
 	raw_text: &str
 ) -> Result<i32, Box<dyn Error + Send + Sync>> {
-	let url = if !url.ends_with("/") { format!("{}/", url) } else { url.to_string() };
+	let url = if !url.ends_with("/") && !url.matches(r"\.(html|htm|php|asp|aspx|jsp|cgi|pl|py|rb|js|css|xml|json|txt|pdf|doc|docx|zip|tar|gz|rar|7z|exe|dmg|pkg|deb|rpm)$").next().is_some() { 
+		format!("{}/", url) 
+	} else { 
+		url.to_string() 
+	};
 	let row = sqlx
 		::query(
 			r#"
@@ -628,13 +635,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			let buttons = *button_count_for_progress.lock().await;
 			let latest_url = latest_scraped_url_for_progress.lock().await.clone();
 			let elapsed = start_time.elapsed().as_secs_f64();
-			
-			let buttons_per_sec = if elapsed > 0.0 { buttons as f64 / elapsed } else { 0.0 };
-			
+
+			let buttons_per_min = if elapsed > 0.0 { buttons as f64 / elapsed * 60.0 } else { 0.0 };
+
 			pb_clone.set_position(pages as u64);
 			pb_clone.set_message(format!(
-				"Buttons: {} ({:.1}/s) | {}",
-				buttons, buttons_per_sec, latest_url
+				"Buttons: {} ({:.1}/min) | {}",
+				buttons, buttons_per_min, latest_url
 			));
 		}
 	});
@@ -758,6 +765,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 					Ok(scraper_response) => {
 						*latest_scraped_url_clone.lock().await = url.clone();
 						
+						let mut page_button_count = 0;
+						let mut button_ids = Vec::new();
+						
+						for (_, button_details) in &scraper_response.buttons {
+							if is_image_url(&button_details.src).await {
+								match sqlx::query_scalar::<_, bool>(
+									"SELECT EXISTS(SELECT 1 FROM buttons WHERE url = $1)"
+								)
+								.bind(&button_details.src)
+								.fetch_one(&pool_clone).await {
+									Ok(exists) if !exists => {
+										match process_button_image(
+											&pool_clone,
+											&button_details.src,
+											button_details.alt.clone(),
+											button_details.links_to.clone()
+										).await {
+											Ok(Some(button_id)) => {
+												page_button_count += 1;
+												button_ids.push((button_id, button_details.links_to.clone()));
+											},
+											Ok(None) => {},
+											Err(_e) => {}
+										}
+									},
+									Ok(_) => {
+										// Button already exists, still count it
+										if let Ok(button_id) = sqlx::query_scalar::<_, i32>(
+											"SELECT id FROM buttons WHERE url = $1"
+										)
+										.bind(&button_details.src)
+										.fetch_one(&pool_clone).await {
+											page_button_count += 1;
+											button_ids.push((button_id, button_details.links_to.clone()));
+										}
+									},
+									Err(e) => eprintln!("Failed to check button existence for {}: {}", button_details.src, e),
+								}
+							}
+						}
+						
+						// Always insert website regardless of button count
 						match insert_website(
 							&pool_clone,
 							&url,
@@ -766,50 +815,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 							&scraper_response.raw_text
 						).await {
 							Ok(website_id) => {
-								let mut page_button_count = 0;
-								
-								for (_, button_details) in &scraper_response.buttons {
-									if is_image_url(&button_details.src).await {
-										match sqlx::query_scalar::<_, bool>(
-											"SELECT EXISTS(SELECT 1 FROM buttons WHERE url = $1)"
+								// Insert button relations only if we have buttons
+								if page_button_count > 0 {
+									for (button_id, links_to) in button_ids {
+										if let Err(e) = sqlx::query(
+											r#"
+											INSERT INTO buttons_relations (button_id, website_id, links_to_url)
+											VALUES ($1, $2, $3)
+											ON CONFLICT (button_id, website_id) DO UPDATE SET links_to_url = $3
+											"#
 										)
-										.bind(&button_details.src)
-										.fetch_one(&pool_clone).await {
-											Ok(exists) if !exists => {
-												match process_button_image(
-													&pool_clone,
-													&button_details.src,
-													button_details.alt.clone(),
-													button_details.links_to.clone()
-												).await {
-													Ok(Some(button_id)) => {
-														page_button_count += 1;
-														if let Err(e) = sqlx::query(
-															r#"
-															INSERT INTO buttons_relations (button_id, website_id, links_to_url)
-															VALUES ($1, $2, $3)
-															ON CONFLICT (button_id, website_id) DO UPDATE SET links_to_url = $3
-															"#
-														)
-														.bind(button_id)
-														.bind(website_id)
-														.bind(button_details.links_to.clone())
-														.execute(&pool_clone).await {
-															eprintln!("Failed to insert button relation: {}", e);
-														}
-													},
-													Ok(None) => {},
-													Err(e) => {}
-												}
-											},
-											Ok(_) => {}, // Button already exists, skip processing
-											Err(e) => eprintln!("Failed to check button existence for {}: {}", button_details.src, e),
+										.bind(button_id)
+										.bind(website_id)
+										.bind(links_to)
+										.execute(&pool_clone).await {
+											eprintln!("Failed to insert button relation: {}", e);
 										}
 									}
+									
+									// Update button count
+									*button_count_clone.lock().await += page_button_count;
 								}
-								
-								// Update button count
-								*button_count_clone.lock().await += page_button_count;
 								
 								if let Err(e) = sqlx::query(
 									"UPDATE websites SET amount_of_buttons = $1, is_scraped = TRUE WHERE id = $2"
@@ -860,7 +886,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 							Err(e) => eprintln!("Failed to insert website {}: {}", url, e),
 						}
 					},
-					Err(e) => {}
+					Err(_e) => {}
 				}
 
 				*scraped_count_clone.lock().await += 1;
