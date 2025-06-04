@@ -1,8 +1,13 @@
 import type { APIRoute } from "astro";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+import { sql } from "drizzle-orm";
 
-export const GET: APIRoute = async (request) => {
-	try {
-        const buttonId = request.url.searchParams.get("buttonId");
+export const GET: APIRoute = async ({ url }) => {
+    const client = postgres(import.meta.env.DB_URL!);
+    
+    try {
+        const buttonId = url.searchParams.get("buttonId");
         if (!buttonId) {
             return new Response(
                 JSON.stringify({ error: "buttonId is required" }),
@@ -13,45 +18,46 @@ export const GET: APIRoute = async (request) => {
             );
         }
 
-        const response = await fetch(
-            `http://localhost:8000/retrieveButton?buttonId=${buttonId}`
+        const db = drizzle(client);
+
+        let buttonResults = await db.execute(
+            sql`SELECT content FROM buttons WHERE id = ${buttonId}`
         );
 
-        if (!response.ok) {
-            let errorDetails = "Failed to reach the IndieSeas API";
-            try {
-                const errorJson = await response.json();
-                errorDetails = errorJson.error || errorDetails;
-            } catch (e) {
-            }
+        if (buttonResults.length === 0) {
             return new Response(
-                JSON.stringify({ error: errorDetails }),
+                JSON.stringify({ error: "Button not found" }),
                 {
-                    status: response.status,
+                    status: 404,
                     headers: { "Content-Type": "application/json" },
                 }
             );
         }
 
-        const imageBuffer = await response.arrayBuffer();
-        const contentType = response.headers.get("Content-Type") || 'application/octet-stream';
+        const button = buttonResults[0];
+        const imageBuffer = button.content as Buffer;
+        const imageName = `button-${buttonId}.png`;
 
         return new Response(imageBuffer, {
             status: 200,
             headers: {
-                "Content-Type": contentType,
+                "Content-Type": "image/png",
+                "Content-Disposition": `inline; filename="${imageName}"`,
             },
         });
-	} catch (err) {
-		return new Response(
-			JSON.stringify({
-				error: "Failed to fetch the IndieSeas API",
-				details: String(err),
-			}),
-			{
-				status: 500,
-				headers: { "Content-Type": "application/json" },
-			}
-		);
-	}
+    } catch (err) {
+        console.error("Error fetching button:", err);
+        return new Response(
+            JSON.stringify({
+                error: "Failed to fetch button from database",
+                details: String(err),
+            }),
+            {
+                status: 500,
+                headers: { "Content-Type": "application/json" },
+            }
+        );
+    } finally {
+        await client.end();
+    }
 };

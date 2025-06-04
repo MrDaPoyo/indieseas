@@ -1,32 +1,91 @@
 import type { APIRoute } from "astro";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+import { sql } from "drizzle-orm";
 
-export const GET: APIRoute = async (request) => {
+export const GET: APIRoute = async ({ url }) => {
+    const client = postgres(import.meta.env.DB_URL!);
+
     try {
-        const response = await fetch(
-            `http://localhost:8000/checkIfIndexed?url=${decodeURIComponent(new URL(request.url).searchParams.get("url") || "")}`
-        );
-        if (!response.ok) {
+        let websiteUrl = url.searchParams.get("url");
+        if (!websiteUrl) {
             return new Response(
-                JSON.stringify({ error: "Failed to reach the IndieSeas API" }),
+                JSON.stringify({ error: "url parameter is required" }),
                 {
-                    status: response.status,
+                    status: 400,
                     headers: { "Content-Type": "application/json" },
                 }
             );
         }
 
-        const result = await response.json();
+        if (!websiteUrl.startsWith("http://") && !websiteUrl.startsWith("https://")) {
+            websiteUrl = `https://${websiteUrl}`;
+        }
 
-        return new Response(JSON.stringify(result), {
-            status: 200,
-            headers: {
-                "Content-Type": "text/json",
-            },
-        });
-    } catch (err) {
+        if (!websiteUrl.endsWith("/")) {
+            websiteUrl += "/";
+        }
+
+        const urlRegex = /^(https?:\/\/)?([\w.-]+)(:[0-9]+)?(\/.*)?$/;
+        if (!urlRegex.test(websiteUrl)) {
+            return new Response(
+                JSON.stringify({ error: "Invalid URL format" }),
+                {
+                    status: 400,
+                    headers: { "Content-Type": "application/json" },
+                }
+            );
+        }
+
+        const db = drizzle(client);
+
+        const websiteResults = await db.execute(
+            sql`SELECT * FROM websites WHERE url = ${websiteUrl}`
+        );
+
+        if (websiteResults.length === 0) {
+            return new Response(
+                JSON.stringify({ indexed: false }),
+                {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                }
+            );
+        }
+
+        const website = websiteResults[0];
+
+        const totalButtons = await db.execute(
+            sql`SELECT SUM(amount_of_buttons) as total FROM websites WHERE url LIKE ${websiteUrl + '%'}`
+        );
+
+        const totalButtonsCount = totalButtons[0]?.total || 0;
+
         return new Response(
             JSON.stringify({
-                error: "Failed to fetch the IndieSeas API",
+                indexed: true,
+                website: {
+                    id: website.id,
+                    url: website.url,
+                    is_scraped: website.is_scraped,
+                    status_code: website.status_code,
+                    title: website.title,
+                    description: website.description,
+                    raw_text: website.raw_text,
+                    scraped_at: website.scraped_at,
+                    amount_of_buttons: totalButtonsCount,
+                }
+            }),
+            {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+            }
+        );
+    } catch (err) {
+        console.error("Error fetching website:", err);
+        return new Response(
+            JSON.stringify({
+                error: "Failed to fetch website from database",
                 details: String(err),
             }),
             {
@@ -34,5 +93,7 @@ export const GET: APIRoute = async (request) => {
                 headers: { "Content-Type": "application/json" },
             }
         );
+    } finally {
+        await client.end();
     }
 };

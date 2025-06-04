@@ -1,15 +1,30 @@
 ---
 const isIndexed = Astro.props.indexed as boolean;
 const url = Astro.props.url as string;
+const website = Astro.props.website;
 ---
 {isIndexed ? (
         <p>Yes, we have scraped {url}!</p>
         <div>
-            <u>If I scraped you, that means your robots.txt allowed me to do so.</u>
+            <u>If I scraped you, that means your robots.txt allowed me to do so.</u><br>
             <small>However, if you want me to remove you from the database, please shoot me a DM at <strong>@dapoyo</strong> on Discord.</small>
+            <div class="website-data">
+                <p>Anyways, here's all the data we have about you! :D</p>
+                <table>
+                    <tr><td><strong>URL:</strong></td><td>{website.url}</td></tr>
+                    <tr><td><strong>Is Scraped:</strong></td><td>{website.is_scraped}</td></tr>
+                    <tr><td><strong>Status Code:</strong></td><td>{website.status_code}</td></tr>
+                    <tr><td><strong>Title:</strong></td><td>{website.title}</td></tr>
+                    <tr><td><strong>Description:</strong></td><td>{website.description}</td></tr>
+                    <tr><td><strong>Raw Text:</strong></td><td>{website.raw_text}</td></tr>
+                    <tr><td><strong>Scraped At:</strong></td><td>{new Date(website.scraped_at).toLocaleString()}</td></tr>
+                    <tr><td><strong>Amount of Buttons:</strong></td><td>{website.amount_of_buttons}</td></tr>
+                </table>
+            </div>
         </div>
     ) : (
         <p>No, we have not scraped {url} yet.</p>
         <p>However, you might be in the queue to be scraped. But don't worry, if you explicitly disallowed IndieSeas to scrape your website, we will respect your choice.</p>
         <small>If you want me to index you, shoot me a DM at <strong>@dapoyo</strong> on Discord.</small>
+
     )}

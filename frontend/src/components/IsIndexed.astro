@@ -4,6 +4,7 @@ import IndexedInfo from "./IndexedInfo.astro";
 const baseUrl = Astro.url.origin;
 let hasChecked = false;
 let isIndexed = false;
+let website = null;
 let url = "";
 let message = "Please enter a URL to check if it has been scraped.";
 
@@ -12,7 +13,7 @@ if (Astro.request.method === "POST") {
 		const data = await Astro.request.formData();
 		url = data.get("url") as string;
 
-		isIndexed = await checkIfIndexed(url);
+		[isIndexed, website] = await checkIfIndexed(url);
 
 		hasChecked = true;
 		message = isIndexed
@@ -45,8 +46,10 @@ async function checkIfIndexed(url: string) {
 		);
 	}
 
-	const isIndexed = (await response.json()).indexed as boolean;
-	return isIndexed;
+	const decoded_response = await response.json();
+
+	const isIndexed = decoded_response.website.is_scraped;
+	return [isIndexed, decoded_response.website];
 }
 ---
 <span>
@@ -64,7 +67,7 @@ async function checkIfIndexed(url: string) {
 				style="padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 5px;"
 			>
 				{isIndexed ? (
-					<IndexedInfo url={url} indexed={true} />
+					<IndexedInfo url={url} indexed={true} website={website} />
 				) : (
 					<IndexedInfo url={url} indexed={false} />
 				)}

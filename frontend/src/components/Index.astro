@@ -16,30 +16,40 @@ const stats = await fetch(
 
 <div class="center">
 	<h1 class="mega-title">IndieSeas</h1>
-	<p>
+	<p style="margin-top: 0;">
 		IndieSeas is a search engine made exclusively for the indieweb. It
 		scrapes based on 88x31 buttons, while respecting privacy and robots.txt
 		policies.<br />Our useragent is <code>indieseas</code>, please allow it!
 		pls pls plsss :3c
 	</p>
 	<Searchbar transition:animate=slide transition:name="searchbar" transition:persist/>
-	<p>Found <strong>{stats.buttons}</strong> buttons across <strong>{stats.successful_websites}</strong> websites!</p>
+	<p>Found <strong>{stats.buttons}</strong> buttons across <strong>{stats.successful_websites}</strong> pages!</p>
 </div>
 
 <style>
 	.center {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
 		display: flex;
 		flex-direction: column;
 		justify-content: center;
 		align-items: center;
-		height: 100vh;
+		flex-grow: 1;
 		text-align: center;
 	}
+
 	.mega-title {
 		font-size: 5rem;
 		font-weight: 400;
-		margin: 0;
 		color: var(--text);
 		margin-bottom: 0;
+	}
+
+	@media (max-width: 600px) {
+		.mega-title {
+			font-size: 3rem;
+		}
 	}
 </style>

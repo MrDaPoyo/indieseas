@@ -33,7 +33,7 @@ import { ClientRouter, slide } from "astro:transitions";
 			<a href="/buttons">The Gallery&trade;</a>
 			<span>|</span>
 			<a href="https://team.indieseas.net/">Team</a>
-			<span id="copyright">Copyright <a href="https://poy.ooo">Poyo</a>, IndieSeas, <a href="https://team.indieseas.net/">IndieFellas</a> 2025.</span>
+			<span id="copyright">Copyright <a href="https://poy.ooo">Poyo</a> & IndieSeas 2025. <img src="/indieseas_button.png" alt="IndieSeas Button" width="88" height="31" class="button" /></span>
 		</footer>
 	</body>
 </html>
@@ -137,11 +137,21 @@ import { ClientRouter, slide } from "astro:transitions";
 		color: var(--text);
 		font-size: 16px;
 		cursor: pointer;
-		transition: 0.3s ease;
 		height: 100%;
+		transition: transform 0.2s cubic-bezier(0.68, -0.55, 0.265, 1.55);
 	}
 	button:hover,
 	input[type="submit"]:hover, select:hover {
 		border-color: var(--secondary);
+		transform: scale(1.2) rotate(5deg);
+	}
+
+	.button-88x31 {
+		transition: transform 0.2s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+		z-index: 1000;
+	}
+
+	.button-88x31:hover {
+		transform: scale(1.5) rotate(5deg);
 	}
 </style>

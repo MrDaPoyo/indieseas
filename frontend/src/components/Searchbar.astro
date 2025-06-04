@@ -1,5 +1,28 @@
 ---
-const urlpathname = Astro.props.buttonSearch ? "/buttons" : "/search";
+const urlpathname = await Astro.props.buttonSearch ? "/buttons" : "/search";
+
+const websitePlaceholders = [
+	"Personal websites for y'all",
+	"Indie websites at your avail",
+	"The cool kid of the class",
+	"Indie websites a click away",
+	"Discover indie websites with ease",
+	"Uncover indie gems!",
+	"Index them all!",
+	"Don't you love me websites"
+];
+
+const buttonPlaceholders = [
+	"Search for a button",
+	"Find your favorite 88x31 buttons",
+	"Buttons, buttons, buttons!",
+	"88x31 buttons at your avail",
+	"Real buttons, just a click away",
+	"Explore the indie web with buttons",
+	"Index them all buttons!",
+	"Don't you love me buttons",
+	"Mmmmm buttons. I WANT MORE!!1!"
+];
 ---
 
 <form action="/search">
@@ -9,7 +32,7 @@ const urlpathname = Astro.props.buttonSearch ? "/buttons" : "/search";
 		type="text"
 		name="q"
 		id="search"
-		placeholder={Astro.props.buttonSearch ? "Search for a button" : "Search for a website"}
+		placeholder={Astro.props.buttonSearch ? buttonPlaceholders[Math.floor(Math.random() * buttonPlaceholders.length)] : websitePlaceholders[Math.floor(Math.random() * websitePlaceholders.length)]}
 		value={Astro.props.query ? decodeURIComponent(Astro.props.query) : ""}
 		autocomplete="off"
 	/>
