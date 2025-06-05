@@ -1,6 +1,5 @@
 ---
 import Button from "./Button.astro";
-
 import Searchbar from "./Searchbar.astro";
 
 const queryParam = Astro.url.searchParams.get("q");
@@ -247,6 +246,7 @@ const queryMessage = query
 				image={"/api/getButton?buttonId=" + button.id}
 				links_to={button.website_url}
 				alt={button.alt}
+				id={button.id}
 			/>
 		))
 	}

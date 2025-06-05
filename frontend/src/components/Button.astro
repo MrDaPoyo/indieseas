@@ -1,41 +1,89 @@
 ---
 export interface ButtonProps {
 	id: number;
-	filename: string;
-	scraped_date: string;
-	found_url: string;
-	hash: string;
-	image: {
-		type: string;
-		data: number[];
-	};
-	src: string;
+	url: string;
+	status_code: number;
+	color_tag: string;
+	color_average: string;
+	scraped_at: string;
 	alt: string;
-	links_to: string;
+	title: string;
+	content: Uint8Array;
+	button_id?: number;
+	website_id?: number;
+	links_to_url?: string;
 }
 
-const { src, alt, links_to, image } = Astro.props;
+const { src, alt, links_to, image, id } = Astro.props;
+
+const response = await fetch(
+	Astro.url.origin + `/api/getButtonInfo?buttonId=${id}`,
+).catch((error) => console.error("Error fetching button info:", error));
+const button = response ? await response.json() : null;
 ---
 
-<div class="background"></div>
+<div class="button-container">
+	<a
+		target="_blank"
+		rel="noopener noreferrer"
+		class="button-link"
+		aria-label={`Visit ${alt}`}
+		title={alt}
+	>
+		<img src={image} alt={alt} class="button-image" loading="lazy" />
+	</a>
 
-<a
-	href={links_to}
-	target="_blank"
-	rel="noopener noreferrer"
-	class="button-link"
-	aria-label={`Visit ${alt}`}
-	title={alt}
->
-	<img
-		src={image}
-		alt={alt}
-		class="button-image"
-		loading="lazy"
-	/>
-</a>
+	{
+		button && (
+			<div class="tooltip">
+				<div class="button-info">
+					<table>
+						<tbody>
+							{Object.entries(button)
+								.filter(
+									([key]) =>
+										key === "alt" || key === "color_tag",
+								)
+								.map(([key, value]) => (
+									<tr key={key}>
+										<td>{key}</td>
+										<td>
+											{key === "color_tag"
+												? Array.isArray(value)
+													? value.join(", ")
+													: value || "N/A"
+												: (value as string) || "N/A"}
+										</td>
+									</tr>
+								))}
+							{button.websites && button.websites.length > 0 && (
+								<tr>
+									<td>Found on</td>
+									<td>
+										{button.websites.length > 1 ? `${button.websites.length} websites` : `${button.websites.length} website`}
+									</td>
+								</tr>
+							)}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		)
+	}
+</div>
 
 <style>
+	table {
+		width: 100%;
+		border-collapse: collapse;
+		margin: 0;
+	}
+
+	.button-container {
+		position: relative;
+		display: inline-block;
+	}
+
 	.button-link {
 		display: inline-block;
 		cursor: pointer;
@@ -59,6 +107,84 @@ const { src, alt, links_to, image } = Astro.props;
 		height: auto;
 	}
 
+	.tooltip {
+		visibility: hidden;
+		opacity: 0;
+		position: absolute;
+		top: 100%;
+		left: 50%;
+		transform: translateX(-50%);
+		margin-top: 10px;
+		z-index: 10000000001;
+		transition:
+			opacity 0.3s ease,
+			visibility 0.3s ease;
+	}
+
+	.button-container:hover .tooltip {
+		visibility: visible;
+		opacity: 1;
+	}
+
+	@media (max-width: 768px) {
+		.tooltip {
+			left: auto;
+			right: 0;
+			transform: none;
+		}
+	}
+
+	@container (max-width: 400px) {
+		.tooltip {
+			left: auto;
+			right: 0;
+			transform: none;
+		}
+	}
+
+	.button-container:has(.tooltip) {
+		position: relative;
+	}
+
+	.tooltip {
+		--tooltip-left: 50%;
+		--tooltip-transform: translateX(-50%);
+		--tooltip-top: 100%;
+		--tooltip-margin: 10px 0 0 0;
+
+		left: var(--tooltip-left);
+		transform: var(--tooltip-transform);
+		top: var(--tooltip-top);
+		margin: var(--tooltip-margin);
+	}
+
+	.button-container:nth-last-child(-n + 2) .tooltip,
+	.button-container:has(+ .button-container:last-child) .tooltip {
+		--tooltip-left: auto;
+		--tooltip-transform: none;
+		right: 0;
+	}
+
+	.button-container:first-child .tooltip {
+		--tooltip-left: 0;
+		--tooltip-transform: none;
+	}
+
+	.button-info {
+		padding: 1vh;
+		border-radius: 8px;
+		box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+		border: 2px var(--primary) solid;
+		background-color: var(--background);
+		min-width: 300px;
+		max-width: 90vw;
+		width: max-content;
+	}
+
+	.button-info p {
+		margin: 0;
+	}
+
 	@media (prefers-reduced-motion) {
 		.button-link {
 			transition: none;
@@ -68,16 +194,59 @@ const { src, alt, links_to, image } = Astro.props;
 			transform: none;
 			box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 		}
-	}
 
-	.background {
-		width: 100%;
-		height: 100%;
-		position: absolute;
-		top: 0;
-		left: 0;
-		display: none;
-		background-color: rgba(0, 0, 0, 0.5);
-		z-index: 9999;
+		.tooltip {
+			transition: none;
+		}
 	}
 </style>
+
+<script>
+	document.addEventListener("DOMContentLoaded", () => {
+		const buttons = document.querySelectorAll(".button-container");
+
+		buttons.forEach((button) => {
+			const tooltip = button.querySelector(".tooltip");
+			if (!tooltip) return;
+
+			button.addEventListener("mouseenter", () => {
+				const rect = button.getBoundingClientRect();
+				const tooltipRect = tooltip.getBoundingClientRect();
+				const viewportWidth = window.innerWidth;
+				const viewportHeight = window.innerHeight;
+
+				// Reset positioning
+				tooltip.style.left = "";
+				tooltip.style.right = "";
+				tooltip.style.top = "";
+				tooltip.style.bottom = "";
+				tooltip.style.transform = "";
+
+				// Check horizontal overflow
+				if (rect.left + tooltipRect.width / 2 > viewportWidth - 20) {
+					// Too close to right edge
+					tooltip.style.left = "auto";
+					tooltip.style.right = "0";
+					tooltip.style.transform = "none";
+				} else if (rect.left - tooltipRect.width / 2 < 20) {
+					// Too close to left edge
+					tooltip.style.left = "0";
+					tooltip.style.transform = "none";
+				} else {
+					// Center position
+					tooltip.style.left = "50%";
+					tooltip.style.transform = "translateX(-50%)";
+				}
+
+				// Check vertical overflow
+				if (rect.bottom + tooltipRect.height + 20 > viewportHeight) {
+					// Show above instead
+					tooltip.style.top = "auto";
+					tooltip.style.bottom = "100%";
+					tooltip.style.marginTop = "0";
+					tooltip.style.marginBottom = "10px";
+				}
+			});
+		});
+	});
+</script>

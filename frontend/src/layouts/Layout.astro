@@ -165,4 +165,22 @@ import { ClientRouter, slide } from "astro:transitions";
 	.button-88x31:hover {
 		transform: scale(1.5) rotate(5deg);
 	}
+
+	table {
+		border-collapse: collapse;
+		margin-top: 1rem;
+	}
+	th, td {
+		border: 1px solid var(--primary);
+		padding: 0.5rem;
+		text-align: left;
+	}
+	th {
+		background-color: var(--primary);
+		color: var(--text);
+	}
+	td {
+		background-color: var(--background);
+		color: var(--text);
+	}
 </style>
