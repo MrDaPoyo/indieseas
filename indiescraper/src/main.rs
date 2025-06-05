@@ -14,6 +14,7 @@ use std::env;
 use std::error::Error;
 use std::sync::Arc;
 use std::time::Duration;
+use std::path::Path;
 use tokio::sync::Mutex;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
@@ -500,7 +501,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let latest_scraped_url: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
 	const MAX_PAGES_PER_WEBSITE: usize = 75;
 	const MAX_PAGES_PER_SUBFOLDER: usize = 10;
-	const MAX_CONCURRENT_TASKS: usize = 10;
+	let MAX_CONCURRENT_TASKS: usize = env::var("MAX_CONCURRENT_TASKS")
+		.ok()
+		.and_then(|s| s.parse::<usize>().ok())
+		.unwrap_or_else(|| 10);
 	let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_TASKS));
 
 	if args.len() < 2 || args[1] == "--clean" || args[1] == "-c" {
@@ -626,11 +630,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let button_count_for_progress = button_count.clone();
 	let latest_scraped_url_for_progress = latest_scraped_url.clone();
 
-	// Spawn progress update task
 	let pb_clone = pb.clone();
 	tokio::spawn(async move {
 		loop {
-			tokio::time::sleep(Duration::from_millis(200)).await;
 			let pages = *scraped_count_for_progress.lock().await;
 			let buttons = *button_count_for_progress.lock().await;
 			let latest_url = latest_scraped_url_for_progress.lock().await.clone();
@@ -676,8 +678,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 				println!("URL not allowed by robots.txt: {}", url);
 				continue;
 			}
-			queue.lock().await.push_back(url.clone());
-			urls_to_scrape.push(url);
+			urls_to_scrape.push(url); 
 		}
 	}
 

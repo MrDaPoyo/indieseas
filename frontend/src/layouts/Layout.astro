@@ -27,13 +27,13 @@ import { ClientRouter, slide } from "astro:transitions";
 		</div>
 		<footer>
 			<a href="/check">Have I been indexed?</a>
-			<span>|</span>
+			<span class="separator">|</span>
 			<a href="/random">Discover a random website!</a>
-			<span>|</span>
+			<span class="separator">|</span>
 			<a href="/buttons">The Gallery&trade;</a>
-			<span>|</span>
+			<span class="separator">|</span>
 			<a href="https://team.indieseas.net/">Team</a>
-			<span id="copyright">Copyright <a href="https://poy.ooo">Poyo</a> & IndieSeas 2025. <img src="/indieseas_button.png" alt="IndieSeas Button" width="88" height="31" class="button" /></span>
+			<span class="separator" id="copyright">Copyright <a href="https://poy.ooo">Poyo</a> & IndieSeas 2025. <img src="/indieseas_button.png" alt="IndieSeas Button" width="88" height="31" class="button" /></span>
 		</footer>
 	</body>
 </html>
@@ -86,7 +86,6 @@ import { ClientRouter, slide } from "astro:transitions";
 	}
 
 	footer {
-		margin-top: auto;
 		padding: 1rem;
 		background-color: var(--background);
 		position: absolute;
@@ -94,11 +93,19 @@ import { ClientRouter, slide } from "astro:transitions";
 		left: 0;
 		width: 100%;
 		margin: 0;
+		align-items: end;
+		justify-content: center;
+		display: flex;
+		flex-direction: row;
 	}
 
 	#copyright {
 		float: right;
 		margin-left: auto;
+	}
+
+	.separator {
+		margin-inline: 0.5rem;
 	}
 
 	a {
