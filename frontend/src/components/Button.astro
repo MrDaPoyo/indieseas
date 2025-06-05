@@ -50,7 +50,9 @@ const button = data;
 											) : key === "website_count" ? (
 												`${value} ${value > 1 ? "websites" : "website"}`
 											) : (
-												value.toString().length > 20 ? value.toString().substring(0, 20) + "..." : value.toString()
+												value && typeof value === 'string' || typeof value === 'number' ? 
+													value.toString().length > 20 ? value.toString().substring(0, 20) + "..." : value.toString()
+													: String(value || '')
 											)}
 										</td>
 									</tr>
