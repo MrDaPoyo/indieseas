@@ -207,46 +207,72 @@ const button = data;
 		const buttons = document.querySelectorAll(".button-container");
 
 		buttons.forEach((button) => {
-			const tooltip = button.querySelector(".tooltip");
+			const tooltip = button.querySelector(".tooltip") as HTMLElement;
 			if (!tooltip) return;
 
 			button.addEventListener("mouseenter", () => {
 				const rect = button.getBoundingClientRect();
-				const tooltipRect = tooltip.getBoundingClientRect();
 				const viewportWidth = window.innerWidth;
 				const viewportHeight = window.innerHeight;
+				const margin = 20; // Space to keep from viewport edges
 
-				// Reset positioning
+				// Reset positioning and margin styles
 				tooltip.style.left = "";
 				tooltip.style.right = "";
 				tooltip.style.top = "";
 				tooltip.style.bottom = "";
 				tooltip.style.transform = "";
+				tooltip.style.marginTop = "";
+				tooltip.style.marginBottom = "";
 
-				// Check horizontal overflow
-				if (rect.left + tooltipRect.width / 2 > viewportWidth - 20) {
-					// Too close to right edge
-					tooltip.style.left = "auto";
-					tooltip.style.right = "0";
+				tooltip.style.visibility = "visible";
+				tooltip.style.opacity = "1";
+				
+				const tooltipRect = tooltip.getBoundingClientRect();
+
+				const buttonCenterViewport = rect.left + rect.width / 2;
+				const tooltipHalfWidth = tooltipRect.width / 2;
+
+				const idealTooltipLeftViewport = buttonCenterViewport - tooltipHalfWidth;
+				const idealTooltipRightViewport = buttonCenterViewport + tooltipHalfWidth;
+
+				const overflowsLeft = idealTooltipLeftViewport < margin;
+				const overflowsRight = idealTooltipRightViewport > (viewportWidth - margin);
+
+				if (overflowsLeft && overflowsRight) {
+					tooltip.style.left = (margin - rect.left) + "px";
+					tooltip.style.right = "auto";
 					tooltip.style.transform = "none";
-				} else if (rect.left - tooltipRect.width / 2 < 20) {
-					// Too close to left edge
-					tooltip.style.left = "0";
+				} else if (overflowsRight) {
+					tooltip.style.left = ((viewportWidth - margin - tooltipRect.width) - rect.left) + "px";
+					tooltip.style.right = "auto";
+					tooltip.style.transform = "none";
+				} else if (overflowsLeft) {
+					tooltip.style.left = (margin - rect.left) + "px";
+					tooltip.style.right = "auto";
 					tooltip.style.transform = "none";
 				} else {
-					// Center position
 					tooltip.style.left = "50%";
+					tooltip.style.right = "auto";
 					tooltip.style.transform = "translateX(-50%)";
 				}
 
-				// Check vertical overflow
-				if (rect.bottom + tooltipRect.height + 20 > viewportHeight) {
-					// Show above instead
+				if (rect.bottom + tooltipRect.height + margin > viewportHeight) {
+					// Show above button
 					tooltip.style.top = "auto";
-					tooltip.style.bottom = "100%";
+					tooltip.style.bottom = "100%"; // Relative to button height
 					tooltip.style.marginTop = "0";
-					tooltip.style.marginBottom = "10px";
+					tooltip.style.marginBottom = "10px"; // Space between tooltip and button
+				} else {
+					// Show below button
+					tooltip.style.top = "100%"; // Relative to button height
+					tooltip.style.bottom = "auto";
+					tooltip.style.marginTop = "10px"; // Space between button and tooltip
+					tooltip.style.marginBottom = "0";
 				}
+
+				tooltip.style.visibility = "";
+				tooltip.style.opacity = "";
 			});
 		});
 	});
