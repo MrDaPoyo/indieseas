@@ -10,7 +10,7 @@ export const GET: APIRoute = async (request) => {
         const db = drizzle(client);
 
         const result = await db.execute(
-            sql`SELECT * FROM websites ORDER BY RANDOM() LIMIT 1`
+            sql`SELECT * FROM websites WHERE status_code = 200 ORDER BY RANDOM() LIMIT 1`
         );
 
         if (result.length === 0) {
