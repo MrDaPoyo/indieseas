@@ -92,16 +92,6 @@ const queryMessage = query
 	</a>
 	<span style="margin: 5px;"></span>
 	<Searchbar query={query} buttonSearch="true" />
-	<style>
-		.header {
-			display: flex;
-			flex-direction: row;
-			justify-content: start;
-			align-items: center;
-			width: 100%;
-			padding: 5px;
-		}
-	</style>
 </div>
 <hr style="margin-top: 0;" />
 <div class="pagination-container">
@@ -235,6 +225,8 @@ const queryMessage = query
 		color: #666;
 		margin-left: 0.5rem;
 	}
+
+	
 </style>
 <div class="button-container">
 	{
@@ -251,5 +243,11 @@ const queryMessage = query
 	.button-container {
 		padding: 1rem;
 		position: relative;
+	}
+	@media (max-width: 600px) {
+		.button-container {
+			padding: 0.5rem;
+			text-align: center;
+		}
 	}
 </style>

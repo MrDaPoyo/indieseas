@@ -45,16 +45,6 @@ const resultList = await results.results || [];
             transition:persist
             query={query}
         />
-        <style>
-            .header {
-                display: flex;
-                flex-direction: row;
-                justify-content: start;
-                align-items: center;
-                width: 100%;
-                padding: 5px;
-            }
-        </style>
 	</div>
 	<hr style="margin-top: 0;"/>
 	<div id="results">
@@ -76,6 +66,38 @@ const resultList = await results.results || [];
             .result * {
                 margin: 0;
                 padding: 0;
+            }
+            .header {
+                display: flex;
+                flex-direction: row;
+                justify-content: start;
+                align-items: center;
+                width: 100%;
+                padding: 5px;
+            }
+
+    	    @media (max-width: 600px) {
+                .header {
+                    flex-direction: column;
+                    align-items: center;
+                }
+                #results {
+                        padding: 10px;
+                    }
+                    .result {
+                        width: 100%;
+                    }
+                }
+                .result h2 {
+                    margin-bottom: 0.5rem;
+                    font-size: 1.5rem;
+                }
+                .result p {
+                    margin-bottom: 0.25rem;
+                }
+                .header h1 {
+                    font-size: 4rem !important;
+                }
             }
         </style>
             <>

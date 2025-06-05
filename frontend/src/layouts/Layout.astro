@@ -26,15 +26,113 @@ import { ClientRouter, slide } from "astro:transitions";
 			<slot />
 		</div>
 		<footer>
-			<a href="/check">Have I been indexed?</a>
-			<span class="separator">|</span>
-			<a href="/random">Discover a random website!</a>
-			<span class="separator">|</span>
-			<a href="/buttons">The Gallery&trade;</a>
-			<span class="separator">|</span>
-			<a href="https://team.indieseas.net/">Team</a>
-			<span class="separator" id="copyright">Copyright <a href="https://poy.ooo">Poyo</a> & IndieSeas 2025. <img src="/indieseas_button.png" alt="IndieSeas Button" width="88" height="31" class="button" /></span>
+			<div class="footer-content">
+				<a href="/check">Have I been indexed?</a>
+				<span class="separator">|</span>
+				<a href="/random">Discover a random website!</a>
+				<span class="separator">|</span>
+				<a href="/buttons">The Gallery&trade;</a>
+				<span class="separator">|</span>
+				<a href="https://team.indieseas.net/">Team</a>
+			</div>
+			<span class="separator" id="copyright">Copyright <a href="https://poy.ooo">Poyo</a> & IndieSeas 2025. <img src="/indieseas_button.png" alt="IndieSeas Button" width="88" height="31" class="button-88x31" /></span>
 		</footer>
+		<script>
+			function initMobileNav() {
+				if (window.innerWidth <= 600) {
+					const footer = document.querySelector('footer');
+					const footerContent = document.querySelector('.footer-content');
+					
+					// Check if mobile nav already exists
+					if (document.querySelector('.mobile-hamburger')) {
+						return;
+					}
+					
+					// Hide footer content initially on mobile
+					footerContent.style.display = 'none';
+					
+					// Create hamburger menu
+					const hamburger = document.createElement('div');
+					hamburger.className = 'mobile-hamburger';
+					hamburger.innerHTML = '☰';
+					hamburger.style.cssText = `
+						position: fixed;
+						top: 20px;
+						right: 20px;
+						background-color: var(--primary);
+						color: var(--text);
+						padding: 10px 15px;
+						border-radius: 8px;
+						cursor: pointer;
+						z-index: 1000;
+						font-size: 20px;
+					`;
+					
+					// Create side navbar
+					const sideNav = document.createElement('div');
+					sideNav.className = 'mobile-sidenav';
+					sideNav.style.cssText = `
+						position: fixed;
+						top: 0;
+						right: -300px;
+						width: 300px;
+						height: 100vh;
+						background-color: var(--background);
+						border-left: 3px solid var(--primary);
+						padding: 60px 20px 20px;
+						transition: right 0.3s ease;
+						z-index: 999;
+						display: flex;
+						flex-direction: column;
+						gap: 20px;
+					`;
+					
+					// Move footer links to side navbar
+					const links = footerContent.querySelectorAll('a');
+					links.forEach(link => {
+						const navLink = link.cloneNode(true);
+						navLink.style.cssText = `
+							padding: 15px;
+							border: 2px solid var(--primary);
+							border-radius: 8px;
+							text-decoration: none;
+							text-align: center;
+							transition: all 0.3s ease;
+						`;
+						sideNav.appendChild(navLink);
+					});
+					
+					// Toggle functionality
+					let isOpen = false;
+					hamburger.addEventListener('click', () => {
+						isOpen = !isOpen;
+						sideNav.style.right = isOpen ? '0' : '-300px';
+						hamburger.innerHTML = isOpen ? '✕' : '☰';
+					});
+					
+					// Close on outside click
+					document.addEventListener('click', (e) => {
+						if (!sideNav.contains(e.target) && !hamburger.contains(e.target) && isOpen) {
+							isOpen = false;
+							sideNav.style.right = '-300px';
+							hamburger.innerHTML = '☰';
+						}
+					});
+					
+					document.body.appendChild(hamburger);
+					document.body.appendChild(sideNav);
+					
+					// Hide original footer on mobile
+					footer.style.display = 'none';
+				}
+			}
+
+			// Run on initial load
+			document.addEventListener('DOMContentLoaded', initMobileNav);
+			
+			// Run after Astro page transitions
+			document.addEventListener('astro:page-load', initMobileNav);
+		</script>
 	</body>
 </html>
 
@@ -55,7 +153,7 @@ import { ClientRouter, slide } from "astro:transitions";
 
 	@font-face {
 		font-family: "Karla";
-		src: url("/fonts/karla.ttf") format("truetype");
+		src: url("/fonts/karla.woff2") format("woff2");
 		font-weight: 400;
 		font-style: normal;
 	}
@@ -182,5 +280,40 @@ import { ClientRouter, slide } from "astro:transitions";
 	td {
 		background-color: var(--background);
 		color: var(--text);
+	}
+
+	@media (max-width: 600px) {
+		.search-container {
+			flex-direction: column;
+			align-items: center;
+		}
+		input[type="text"], input[type="url"], select, button, input[type="submit"] {
+			width: 100%;
+			margin-bottom: 0.5rem;
+		}
+		footer {
+			flex-direction: column;
+			align-items: center;
+			position: fixed;
+			bottom: 0;
+			transition: bottom 0.3s ease;
+		}
+		
+		footer:hover {
+			bottom: 0;
+		}
+		
+		footer::before {
+			content: "☰ Menu";
+			position: absolute;
+			top: 40px;
+			left: 50%;
+			transform: translateX(-50%);
+			background-color: var(--primary);
+			color: var(--text);
+			padding: 8px 16px;
+			border-radius: 8px 8px 0 0;
+			cursor: pointer;
+		}
 	}
 </style>
