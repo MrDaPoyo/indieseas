@@ -29,10 +29,22 @@ export const GET: APIRoute = async (request) => {
 			);
 
 			buttonsQuery = sql`
-				SELECT id, url as button_text, color_tag, '' as website_url, color_average, scraped_at, alt, title, content 
-				FROM buttons 
-				WHERE color_tag ILIKE ${searchQuery} 
-				ORDER BY id 
+				SELECT 
+					b.id, 
+					b.url as button_text, 
+					b.color_tag, 
+					'' as website_url, 
+					b.color_average, 
+					b.scraped_at, 
+					b.alt, 
+					b.title, 
+					b.content,
+					COALESCE(COUNT(br.id), 0) as website_count
+				FROM buttons b
+				LEFT JOIN buttons_relations br ON b.id = br.button_id
+				WHERE b.color_tag ILIKE ${searchQuery} 
+				GROUP BY b.id, b.url, b.color_tag, b.color_average, b.scraped_at, b.alt, b.title, b.content
+				ORDER BY b.id 
 				LIMIT ${pageSize} 
 				OFFSET ${offset}`;
 		} else if (query) {
@@ -44,10 +56,22 @@ export const GET: APIRoute = async (request) => {
 			);
 
 			buttonsQuery = sql`
-				SELECT id, url as button_text, color_tag, '' as website_url, color_average, scraped_at, alt, title, content 
-				FROM buttons 
-				WHERE url ILIKE ${searchQuery} 
-				ORDER BY id 
+				SELECT 
+					b.id, 
+					b.url as button_text, 
+					b.color_tag, 
+					'' as website_url, 
+					b.color_average, 
+					b.scraped_at, 
+					b.alt, 
+					b.title, 
+					b.content,
+					COALESCE(COUNT(br.id), 0) as website_count
+				FROM buttons b
+				LEFT JOIN buttons_relations br ON b.id = br.button_id
+				WHERE b.url ILIKE ${searchQuery} 
+				GROUP BY b.id, b.url, b.color_tag, b.color_average, b.scraped_at, b.alt, b.title, b.content
+				ORDER BY b.id 
 				LIMIT ${pageSize} 
 				OFFSET ${offset}`;
 		} else {
@@ -57,9 +81,21 @@ export const GET: APIRoute = async (request) => {
 			);
 
 			buttonsQuery = sql`
-				SELECT id, url as button_text, color_tag, '' as website_url, color_average, scraped_at, alt, title, content 
-				FROM buttons 
-				ORDER BY id 
+				SELECT 
+					b.id, 
+					b.url as button_text, 
+					b.color_tag, 
+					'' as website_url, 
+					b.color_average, 
+					b.scraped_at, 
+					b.alt, 
+					b.title, 
+					b.content,
+					COALESCE(COUNT(br.id), 0) as website_count
+				FROM buttons b
+				LEFT JOIN buttons_relations br ON b.id = br.button_id
+				GROUP BY b.id, b.url, b.color_tag, b.color_average, b.scraped_at, b.alt, b.title, b.content
+				ORDER BY b.id 
 				LIMIT ${pageSize} 
 				OFFSET ${offset}`;
 		}

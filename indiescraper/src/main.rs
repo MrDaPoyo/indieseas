@@ -195,7 +195,7 @@ async fn check_button(buffer: &[u8], _url: &str) -> Result<bool, image::ImageErr
 
 async fn initialize_db() -> Result<Pool<Postgres>, sqlx::Error> {
 	let db_url = env::var("DB_URL").expect("DB_URL must be set");
-	let pool = PgPoolOptions::new().max_connections(20).connect(&db_url).await?;
+	let pool = PgPoolOptions::new().max_connections(50).connect(&db_url).await?;
 
 	sqlx
 		::query(

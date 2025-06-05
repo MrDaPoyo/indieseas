@@ -14,23 +14,20 @@ export interface ButtonProps {
 	links_to_url?: string;
 }
 
-const { src, alt, links_to, image, id } = Astro.props;
-
-const response = await fetch(
-	Astro.url.origin + `/api/getButtonInfo?buttonId=${id}`,
-).catch((error) => console.error("Error fetching button info:", error));
-const button = response ? await response.json() : null;
+const { data } = Astro.props;
+const button = data;
 ---
 
 <div class="button-container">
 	<a
+		href={data.url}
 		target="_blank"
 		rel="noopener noreferrer"
 		class="button-link"
-		aria-label={`Visit ${alt}`}
-		title={alt}
+		aria-label={`Visit ${data.alt}`}
+		title={data.alt}
 	>
-		<img src={image} alt={alt} class="button-image" loading="lazy" />
+		<img src={`data:image/png;base64,${btoa(String.fromCharCode(...data.content.data))}`} alt={data.alt} class="button-image" loading="lazy" />
 	</a>
 
 	{
@@ -42,17 +39,19 @@ const button = response ? await response.json() : null;
 							{Object.entries(button)
 								.filter(
 									([key]) =>
-										key === "alt" || key === "color_tag",
+										key === "alt" || key === "color_tag" || key === "website_count",
 								)
 								.map(([key, value]) => (
 									<tr key={key}>
 										<td>{key}</td>
 										<td>
-											{key === "color_tag"
-												? Array.isArray(value)
-													? value.join(", ")
-													: value || "N/A"
-												: (value as string) || "N/A"}
+											{key === "color_tag" ? (
+												<span class={`color-tag ${value}`}>{value}</span>
+											) : key === "website_count" ? (
+												`${value} ${value > 1 ? "websites" : "website"}`
+											) : (
+												value
+											)}
 										</td>
 									</tr>
 								))}
