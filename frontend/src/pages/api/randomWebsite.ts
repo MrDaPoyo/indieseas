@@ -10,7 +10,27 @@ export const GET: APIRoute = async (request) => {
         const db = drizzle(client);
 
         const result = await db.execute(
-            sql`SELECT * FROM websites WHERE status_code = 200 ORDER BY RANDOM() LIMIT 1`
+            sql`
+            SELECT w.*, array_agg(
+            json_build_object(
+            'id', b.id,
+            'url', b.url,
+            'status_code', b.status_code,
+            'color_tag', b.color_tag,
+            'color_average', b.color_average,
+            'alt', b.alt,
+            'title', b.title,
+            'links_to_url', br.links_to_url
+            )
+            ) FILTER (WHERE b.id IS NOT NULL) as buttons
+            FROM websites w
+            LEFT JOIN buttons_relations br ON w.id = br.website_id
+            LEFT JOIN buttons b ON br.button_id = b.id
+            WHERE w.status_code = 200 AND w.is_scraped = true AND w.amount_of_buttons > 0
+            GROUP BY w.id
+            ORDER BY RANDOM()
+            LIMIT 1
+            `
         );
 
         if (result.length === 0) {

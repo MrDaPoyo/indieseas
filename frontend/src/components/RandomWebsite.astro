@@ -1,8 +1,7 @@
 ---
-import { Image } from 'astro:assets';
+import { Image } from "astro:assets";
 
-const targetUrl =
-    new URL(Astro.url.origin + "/api/randomWebsite").href
+const targetUrl = new URL(Astro.url.origin + "/api/randomWebsite").href;
 
 const response = await fetch(targetUrl, {
     method: "GET",
@@ -13,56 +12,71 @@ const response = await fetch(targetUrl, {
 
 if (!response.ok) {
     throw new Error(
-        `Error fetching search results: ${response.statusText} (${response.status})`
+        `Error fetching search results: ${response.statusText} (${response.status})`,
     );
 }
 
-const website = await response.json()
+const website = await response.json();
+const buttons = website.buttons || [];
 const formattedDate = new Date(website.scraped_at).toTimeString();
 ---
-<span>
-    <a href="/">Back</a> - <a href="/random">Jump!</a>
-</span>
-<div class="website-showcase">
-    <h2 class="website-title">
-        <a href={website.url} target="_blank" rel="noopener noreferrer">{website.title || website.url}</a>
-    </h2>
-    <p class="website-info">Scraped: {formattedDate}</p>
-    
-    <div class="website-preview">
-        <iframe
-            src={website.url}
-            title={website.title || website.url}
-            sandbox="allow-scripts allow-same-origin"
-            loading="lazy"
-        ></iframe>
-    </div>
-    
-    {website.buttons && website.buttons.length > 0 && (
-        <div class="buttons-section">
-            <h3>Buttons</h3>
-            <div class="buttons-container">
-                {website.buttons.map(button => (
-                    <div class="button-item">
-                        {button.found_url && (
-                            <a href={button.links_to} target="_blank" rel="noopener noreferrer">
-                                <Image 
-                                    src={`/api/getButton?buttonId=${button.id}`} 
-                                    width={88} 
-                                    height={31} 
-                                    alt={button.alt || button.button_text || `${website.url} button`} 
-                                />
-                            </a>
-                        )}
-                    </div>
-                ))}
-            </div>
+
+<div class="navbar">
+    <div class="nav-content">
+        <div class="nav-left">
+            <strong
+                ><a href={website.url} target="_blank" rel="noopener noreferrer"
+                    ><h1>{website.title || website.url}</h1></a
+                ></strong
+            >
         </div>
-    )}
+    </div>
+    {
+        website.buttons && website.buttons.length > 0 && (
+            <div class="buttons-bar">
+                <marquee
+                    class="buttons-marquee"
+                    behavior="scroll"
+                    direction="left"
+                >
+                    <div class="buttons-container">
+                        {buttons.map((button) => (
+                            <div class="button-item">
+                                {button.id && (
+                                    <a
+                                        href={button.links_to_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        <Image
+                                            src={`/api/getButton?buttonId=${button.id}`}
+                                            width={88}
+                                            height={31}
+                                            alt={
+                                                button.alt ||
+                                                `${website.url} button`
+                                            }
+                                        />
+                                    </a>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </marquee>
+            </div>
+        )
+    }
+</div>
+
+<div class="website-frame">
+    <iframe
+        src={website.url}
+        title={website.title || website.url}
+        sandbox="allow-scripts allow-same-origin"
+        loading="lazy"></iframe>
 </div>
 
 <style>
-
     .website-showcase {
         max-width: 800px;
         margin: 2rem auto;
@@ -95,19 +109,24 @@ const formattedDate = new Date(website.scraped_at).toTimeString();
         font-size: 0.9rem;
     }
 
-    .website-preview {
+    .website-frame {
         width: 100%;
         margin-bottom: 1.5rem;
-        border-radius: 4px;
         overflow: hidden;
         box-shadow: 0 1px 8px rgba(87, 136, 255, 0.3);
+        background-color: aliceblue;
+        display: flex;
+        flex-grow: 1;
+        border: none;
+        height: 80vh;
     }
 
     iframe {
         width: 100%;
-        height: 450px;
+        height: 100%;
+        display: flex;
+        flex-grow: 1;
         border: none;
-        display: block;
     }
 
     .buttons-section {
@@ -120,7 +139,7 @@ const formattedDate = new Date(website.scraped_at).toTimeString();
 
     .buttons-container {
         display: flex;
-        flex-wrap: wrap;
+        align-items: center;
         gap: 1rem;
         margin-top: 0.5rem;
     }
@@ -131,5 +150,40 @@ const formattedDate = new Date(website.scraped_at).toTimeString();
 
     .button-item:hover {
         transform: scale(1.05);
+    }
+
+    .navbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem 1rem;
+        border: 1px solid var(--primary);
+        color: white;
+    }
+    .nav-content {
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
+    }
+    .nav-left,
+    .nav-center,
+    .nav-right {
+        align-items: center;
+        height: 100%;
+    }
+    (.nav-left, .nav-right, .nav-center) > * {
+        margin: 0 1rem;
+    }
+    .nav-left {
+        text-align: left;
+    }
+    .nav-center {
+        text-align: center;
+    }
+    .nav-right {
+        text-align: right;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
     }
 </style>
