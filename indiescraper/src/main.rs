@@ -761,6 +761,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 					*count += 1;
 				}
 
+				if is_url_already_scraped(&pool_clone, &normalized_url).await.unwrap_or(true) {
+					return;
+				}
+
 				match ScraperResponse::get(&url).await {
 					Ok(scraper_response) => {
 						*latest_scraped_url_clone.lock().await = url.clone();
@@ -806,7 +810,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 							}
 						}
 						
-						// Always insert website regardless of button count
+						// 999 means no buttons / not a personal website
+						let status_code = if page_button_count > 0 { 200 } else { 999 };
+						
 						match insert_website(
 							&pool_clone,
 							&url,
@@ -815,7 +821,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 							&scraper_response.raw_text
 						).await {
 							Ok(website_id) => {
-								// Insert button relations only if we have buttons
 								if page_button_count > 0 {
 									for (button_id, links_to) in button_ids {
 										if let Err(e) = sqlx::query(
@@ -833,20 +838,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 										}
 									}
 									
-									// Update button count
 									*button_count_clone.lock().await += page_button_count;
 								}
 								
 								if let Err(e) = sqlx::query(
-									"UPDATE websites SET amount_of_buttons = $1, is_scraped = TRUE WHERE id = $2"
+									"UPDATE websites SET amount_of_buttons = $1, status_code = $2, is_scraped = TRUE WHERE id = $3"
 								)
 								.bind(page_button_count as i32)
+								.bind(status_code)
 								.bind(website_id)
 								.execute(&pool_clone).await {
-									eprintln!("Failed to update button count: {}", e);
+									eprintln!("Failed to update website status: {}", e);
 								}
 
-								// Queue new URLs from links and buttons
 								for link in scraper_response.links {
 									if link.href.trim().is_empty() || link.text.trim().is_empty() {
 										continue;

@@ -29,6 +29,7 @@ const formattedDate = new Date(website.scraped_at).toTimeString();
                     ><h1>{website.title || website.url}</h1></a
                 ></strong
             >
+            <p>{website.description || "No description provided."}</p>
         </div>
     </div>
     {
