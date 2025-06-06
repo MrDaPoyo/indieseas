@@ -14,7 +14,6 @@ use std::env;
 use std::error::Error;
 use std::sync::Arc;
 use std::time::Duration;
-use std::path::Path;
 use tokio::sync::Mutex;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
@@ -26,10 +25,9 @@ use robots::is_allowed;
 mod declutter;
 use declutter::analyze_text_frequency;
 use colorize::ColorAnalyzer;
-use indicatif::{ProgressBar, ProgressStyle};
-use std::time::Instant;
+use indicatif::{ ProgressBar, ProgressStyle };
 
-static PROHIBITED_LINKS: [&str; 45] = [
+static PROHIBITED_LINKS: [&str; 50] = [
 	"mailto:",
 	"tel:",
 	"itch.io",
@@ -75,6 +73,11 @@ static PROHIBITED_LINKS: [&str; 45] = [
 	"archive.org",
 	"ftp://",
 	"bsky.app",
+	"codeberg.org",
+	"sourcehut.org",
+	"git.sr.ht",
+	"gitea.com",
+	"gitee.com",
 ];
 
 static SCRAPER_WORKER: Lazy<String> = Lazy::new(|| {
@@ -137,54 +140,94 @@ async fn is_url_already_scraped(pool: &Pool<Postgres>, url: &str) -> Result<bool
 }
 
 impl ScraperResponse {
-    async fn get(url: &str) -> Result<ScraperResponse, Box<dyn std::error::Error + Send + Sync>> {
+	async fn get(url: &str) -> Result<ScraperResponse, Box<dyn std::error::Error + Send + Sync>> {
 		let request_url = format!("{}{}", *SCRAPER_WORKER, urlencoding::encode(url));
-        
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()?;
 
-        let response = client.get(&request_url).send().await?;
-        let status = response.status();
-        
-        if !status.is_success() {
-            let error_body: Value = response.json().await.unwrap_or_else(|_| "Failed to read error body".into());
-            return Err(format!("Worker returned status {}: {}", status, error_body).into());
-        }
+		let client = reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?;
 
-        let full_response = response.text().await?;
+		let response = client.get(&request_url).send().await?;
+		let status = response.status();
 
-        let json_response: JsonWorkerResponse = match serde_json::from_str(&full_response) {
-            Ok(data) => data,
-            Err(e) => {
-                return Err(e.into());
-            }
-        };
+		if !status.is_success() {
+			let error_body: Value = response
+				.json().await
+				.unwrap_or_else(|_| "Failed to read error body".into());
+			return Err(format!("Worker returned status {}: {}", status, error_body).into());
+		}
 
-		let links = json_response.links
+		let full_response = response.text().await?;
+
+		let json_response: JsonWorkerResponse = match serde_json::from_str(&full_response) {
+			Ok(data) => data,
+			Err(e) => {
+				return Err(e.into());
+			}
+		};
+
+		let links: Vec<LinkResponse> = json_response.links
 			.into_iter()
 			.filter_map(|link| {
-				link.href.map(|href| {
-					if !PROHIBITED_LINKS.iter().any(|&prohibited| href.contains(prohibited)) {
-						Some(LinkResponse {
-							href,
-							text: link.text,
-						})
-					} else {
-						None
-					}
-				}).flatten()
+				link.href
+					.map(|href| {
+						if !PROHIBITED_LINKS.iter().any(|&prohibited| href.contains(prohibited)) {
+							Some(LinkResponse {
+								href,
+								text: link.text,
+							})
+						} else {
+							None
+						}
+					})
+					.flatten()
 			})
 			.collect();
 
-        Ok(ScraperResponse {
-            raw_text: analyze_text_frequency(&json_response.raw_text),
-            title: json_response.title,
-            description: json_response.description,
-            links,
-            buttons: json_response.buttons,
-        })
-    }
+		let mut link_groups: HashMap<String, Vec<&LinkResponse>> = HashMap::new();
+		for link in &links {
+			let normalized = link.href
+				.trim_start_matches("https://")
+				.trim_start_matches("http://")
+				.trim_start_matches("/")
+				.trim_end_matches("/")
+				.to_lowercase();
+
+			link_groups.entry(normalized).or_insert_with(Vec::new).push(link);
+		}
+
+		let mut seen_normalized = HashSet::new();
+		let links = links
+			.into_iter()
+			.filter(|link| {
+				let normalized = link.href
+					.trim_start_matches("https://")
+					.trim_start_matches("http://")
+					.trim_start_matches("/")
+					.trim_end_matches("/")
+					.to_lowercase();
+
+				if seen_normalized.contains(&normalized) {
+					false
+				} else {
+					seen_normalized.insert(normalized);
+					true
+				}
+			})
+			.collect::<Vec<_>>();
+
+		Ok(ScraperResponse {
+			raw_text: analyze_text_frequency(&json_response.raw_text),
+			title: json_response.title,
+			description: json_response.description,
+			links: links
+				.into_iter()
+				.filter(|link| {
+					!PROHIBITED_LINKS.iter().any(|&prohibited| link.href.contains(prohibited)) &&
+						!link.href.contains('\n')
+				})
+				.collect(),
+			buttons: json_response.buttons,
+		})
+	}
 }
 
 async fn check_button(buffer: &[u8], _url: &str) -> Result<bool, image::ImageError> {
@@ -273,6 +316,19 @@ async fn initialize_db() -> Result<Pool<Postgres>, sqlx::Error> {
 		)
 		.execute(&pool).await?;
 
+	sqlx
+		::query(
+			r#"
+		CREATE TABLE IF NOT EXISTS robots (
+			id SERIAL PRIMARY KEY,
+			website_id INTEGER REFERENCES websites(id),
+			allowed BOOLEAN DEFAULT TRUE,
+			last_checked TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+		"#
+		)
+		.execute(&pool).await?;
+
 	Ok(pool)
 }
 
@@ -283,10 +339,17 @@ async fn insert_website(
 	description: Option<String>,
 	raw_text: &str
 ) -> Result<i32, Box<dyn Error + Send + Sync>> {
-	let url = if !url.ends_with("/") && !url.matches(r"\.(html|htm|php|asp|aspx|jsp|cgi|pl|py|rb|js|css|xml|json|txt|pdf|doc|docx|zip|tar|gz|rar|7z|exe|dmg|pkg|deb|rpm)$").next().is_some() { 
-		format!("{}/", url) 
-	} else { 
-		url.to_string() 
+	let url = if
+		!url.ends_with("/") &&
+		!url.contains('?') &&
+		!url.contains('#') &&
+		!regex::Regex::new(r"\.(html|htm|php|asp|aspx|jsp|cgi|pl|py|rb|js|css|xml|json|txt|pdf|doc|docx|zip|tar|gz|rar|7z|exe|dmg|pkg|deb|rpm)$")
+			.unwrap()
+			.is_match(url)
+	{
+		format!("{}/", url)
+	} else {
+		url.to_string()
 	};
 	let row = sqlx
 		::query(
@@ -457,7 +520,9 @@ async fn process_button_image(
 
 	let (color_tags, color_average) = match image::load_from_memory(&buffer) {
 		Ok(img) => {
-			let analysis = ColorAnalyzer::new().analyze_image(&img);
+			let analysis = tokio::task
+				::spawn_blocking(move || { ColorAnalyzer::new().analyze_image(&img) }).await
+				.unwrap();
 			(analysis.tags.join(","), analysis.hex_average)
 		}
 		Err(_) => (String::new(), String::new()),
@@ -483,157 +548,380 @@ async fn process_button_image(
 	Ok(Some(row.get::<i32, _>("id")))
 }
 
-async fn is_image_url(url: &str) -> bool {
+fn is_image_url(url: &str) -> bool {
 	let image_extensions = ["jpg", "jpeg", "png", "gif", "webp"];
-	image_extensions.iter().any(|ext| url.ends_with(ext)) as bool
+	image_extensions.iter().any(|ext| url.ends_with(ext))
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	dotenv().ok();
-	let args: Vec<String> = env::args().collect();
 	let pool = initialize_db().await?;
 	println!("Database initialized successfully.");
 
+	const DEFAULT_URL: &str = "https://thinliquid.dev/";
 	const MAX_CONCURRENT_REQUESTS: usize = 10;
-	let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS));
-	let mut join_set = JoinSet::new();
-	if args.len() < 2 {
-		eprintln!("Usage: {} <url>", args[0]);
-		return Ok(());
+
+	// sqlx::query is used for querying the database, and sqlx::query_scalar is used for "scalar" ( single value ) queries
+	let website_queue_check = sqlx::query("SELECT url FROM websites WHERE is_scraped = FALSE");
+
+	if website_queue_check.fetch_one(&pool).await.is_err() {
+		println!("Adding default URL: {}", DEFAULT_URL);
+		sqlx
+			::query(
+				"INSERT INTO websites (url, is_scraped) VALUES ($1, FALSE) ON CONFLICT (url) DO NOTHING"
+			)
+			.bind(DEFAULT_URL)
+			.execute(&pool).await?;
 	}
 
-	let start_url = "https://thinliquid.dev/";
-	let mut queue = VecDeque::new();
-	let mut visited = HashSet::new();
-	queue.push_back(start_url.to_string());
+	let rows = sqlx
+		::query("SELECT url FROM websites WHERE is_scraped = FALSE")
+		.fetch_all(&pool).await?;
+	let page_queue: VecDeque<String> = rows
+		.into_iter()
+		.map(|row| row.get::<String, _>("url"))
+		.collect();
 
-	let progress_bar = ProgressBar::new(0);
-	progress_bar.set_style(
+	let page_scraped = Arc::new(Mutex::new(HashSet::new()));
+	let page_queue = Arc::new(Mutex::new(page_queue));
+
+	let max_pages = 100000;
+	let scraped_count = Arc::new(Mutex::new(0));
+
+	let unscraped_rows = sqlx
+		::query("SELECT url FROM websites WHERE is_scraped = FALSE")
+		.fetch_all(&pool).await?;
+
+	for row in unscraped_rows {
+		let url = row.get::<String, _>("url");
+		let mut queue = page_queue.lock().await;
+		if !queue.iter().any(|u| u == &url) {
+			queue.push_back(url);
+		}
+	}
+
+	let pb = ProgressBar::new(max_pages as u64);
+	pb.set_style(
 		ProgressStyle::default_bar()
-			.template("{spinner:.green} [{elapsed_precise}] {pos}/{len} {msg}")
+			.template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
 			.unwrap()
+			.progress_chars("#>:3<")
 	);
 
-	while let Some(current_url) = queue.pop_front() {
-		if visited.contains(&current_url) {
+	let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS));
+	let mut tasks: JoinSet<(Vec<String>, String)> = JoinSet::new();
+
+	loop {
+		// Check if we've reached the max pages limit
+		if *scraped_count.lock().await >= max_pages {
+			break;
+		}
+
+		// Get next URL from queue
+		let url = {
+			let mut queue = page_queue.lock().await;
+			queue.pop_front()
+		};
+
+		let Some(url) = url else {
+			break;
+		};
+
+		// Check if already scraped
+		if page_scraped.lock().await.contains(&url) {
 			continue;
 		}
-		visited.insert(current_url.clone());
 
-		progress_bar.set_message(format!("Processing: {}", current_url));
-		progress_bar.inc(1);
+		let url = if !url.ends_with("/") && 
+			!url.contains('?') && 
+			!url.contains('#') && 
+			!regex::Regex::new(r"\.(html|htm|php|asp|aspx|jsp|cgi|pl|py|rb|js|css|xml|json|txt|pdf|doc|docx|zip|tar|gz|rar|7z|exe|dmg|pkg|deb|rpm)$")
+				.unwrap()
+				.is_match(&url) {
+			format!("{}/", url)
+		} else {
+			url
+		};
 
-		let permit = semaphore.clone().acquire_owned().await.unwrap();
-		let pool_clone = pool.clone();
-		let queue_clone = Arc::new(Mutex::new(queue.clone()));
-
-		join_set.spawn(async move {
-			let _permit = permit;
-			
-			if is_url_already_scraped(&pool_clone, &current_url).await.unwrap_or(false) {
-				return;
-			}
-
-			let response = match ScraperResponse::get(&current_url).await {
-				Ok(resp) => resp,
-				Err(e) => {
-					eprintln!("Failed to scrape {}: {}", current_url, e);
-					return;
-				}
-			};
-
-			let mut button_ids = Vec::new();
-			let mut website_id = None;
-
-			// Process buttons first
-			for (button_url, button_detail) in &response.buttons {
-				if is_image_url(button_url).await {
-					if let Ok(Some(button_id)) = process_button_image(
-						&pool_clone,
-						button_url,
-						button_detail.alt.clone(),
-						button_detail.links_to.clone()
-					).await {
-						button_ids.push((button_id, button_detail.links_to.clone()));
+		match is_url_already_scraped(&pool, &url).await {
+			Ok(true) => {
+				match
+					sqlx
+						::query_scalar::<_, bool>("SELECT is_scraped FROM websites WHERE url = $1")
+						.bind(&url)
+						.fetch_one(&pool).await
+				{
+					Ok(true) => {
+						continue;
+					}
+					Ok(false) => {} // Not scraped yet, proceed
+					Err(_) => {
+						continue;
 					}
 				}
 			}
+			Ok(false) => {}
+			Err(e) => {
+				eprintln!("Database error checking if URL already scraped: {}", e);
+				continue;
+			}
+		}
 
-			// Only insert website if it has 88x31 buttons
-			if !button_ids.is_empty() {
-				let raw_text_string = response.raw_text
-					.iter()
-					.map(|(word, count)| format!("{} ", word.repeat(*count)))
-					.collect::<String>();
+		page_scraped.lock().await.insert(url.clone());
 
-				match insert_website(
-					&pool_clone,
-					&current_url,
-					response.title,
-					response.description,
-					&raw_text_string
-				).await {
-					Ok(id) => {
-						website_id = Some(id);
-						
-						// Insert button relations
-						for (button_id, links_to) in button_ids {
-							let _ = sqlx::query(
-								r#"
-								INSERT INTO buttons_relations (button_id, website_id, links_to_url)
-								VALUES ($1, $2, $3)
-								ON CONFLICT DO NOTHING
-								"#
-							)
-							.bind(button_id)
-							.bind(id)
-							.bind(links_to.clone())
-							.execute(&pool_clone)
-							.await;
+		{
+			let mut count = scraped_count.lock().await;
+			*count += 1;
+		}
 
-							// Add links_to URLs to queue if they're not prohibited
-							if let Some(ref link_url) = links_to {
-								if !PROHIBITED_LINKS.iter().any(|&prohibited| link_url.contains(prohibited)) {
-									let mut queue_guard = queue_clone.lock().await;
-									queue_guard.push_back(link_url.clone());
-								}
+		let mut new_urls = Vec::new();
+
+		match is_allowed(&url).await {
+			Ok(false) => {
+				if
+					let Err(e) = sqlx
+						::query("UPDATE websites SET is_scraped = TRUE WHERE url = $1")
+						.bind(&url)
+						.execute(&pool).await
+				{
+					eprintln!("Failed to mark robots-blocked website as scraped: {}", e);
+				}
+				continue;
+			}
+			Ok(true) => {}
+			Err(e) => {
+				let err_str = e.to_string();
+				if
+					let Err(_) = sqlx
+						::query("UPDATE websites SET is_scraped = TRUE WHERE url = $1")
+						.bind(&url)
+						.execute(&pool).await
+				{
+					eprintln!("Failed to mark website as scraped due to robots.txt error");
+				}
+				eprintln!("Error in is_allowed for {}: {}", url, err_str);
+				continue;
+			}
+		}
+
+		// Check robots.txt from database first
+		let mut robots_allowed = None;
+		if let Ok(row) = sqlx::query("SELECT allowed FROM robots WHERE website_id = (SELECT id FROM websites WHERE url = $1) ORDER BY last_checked DESC LIMIT 1")
+			.bind(&url)
+			.fetch_optional(&pool).await {
+			if let Some(row) = row {
+				robots_allowed = Some(row.get::<bool, _>("allowed"));
+			}
+		}
+
+		// If not in database, check with robots::is_allowed
+		let is_robots_allowed = match robots_allowed {
+			Some(allowed) => allowed,
+			None => {
+				match is_allowed(&url).await {
+					Ok(allowed) => {
+						// Store result in database
+						if let Ok(website_id) = sqlx::query_scalar::<_, i32>("SELECT id FROM websites WHERE url = $1")
+							.bind(&url)
+							.fetch_optional(&pool).await {
+							if let Some(website_id) = website_id {
+								let _ = sqlx::query("INSERT INTO robots (website_id, allowed) VALUES ($1, $2) ON CONFLICT (website_id) DO UPDATE SET allowed = $2, last_checked = CURRENT_TIMESTAMP")
+									.bind(website_id)
+									.bind(allowed)
+									.execute(&pool).await;
 							}
 						}
+						allowed
+					}
+					Err(e) => {
+						eprintln!("Error checking robots.txt for {}: {}", url, e);
+						false
+					}
+				}
+			}
+		};
 
-						// Add other links to queue
-						for link in &response.links {
-							if !PROHIBITED_LINKS.iter().any(|&prohibited| link.href.contains(prohibited)) {
-								let mut queue_guard = queue_clone.lock().await;
-								queue_guard.push_back(link.href.clone());
+		if !is_robots_allowed {
+			if let Err(e) = sqlx::query("UPDATE websites SET is_scraped = TRUE WHERE url = $1")
+				.bind(&url)
+				.execute(&pool).await {
+				eprintln!("Failed to mark robots-blocked website as scraped: {}", e);
+			}
+			continue;
+		}
+
+		match ScraperResponse::get(&url).await {
+			Ok(mut response) => {
+				let raw_text_string = response.raw_text
+					.iter()
+					.map(|(word, count)| format!("{}: {}", word, count))
+					.collect::<Vec<_>>()
+					.join(", ");
+
+				match
+					insert_website(
+						&pool,
+						&url,
+						response.title.clone(),
+						response.description.clone(),
+						&raw_text_string
+					).await
+				{
+					Ok(website_id) => {
+						if
+							let Err(e) = sqlx
+								::query("UPDATE websites SET is_scraped = TRUE WHERE url = $1")
+								.bind(&url)
+								.execute(&pool).await
+						{
+							eprintln!("Failed to mark website as scraped: {}", e);
+						}
+
+						for (_button_key, button_detail) in response.buttons {
+							if is_image_url(&button_detail.src) {
+								match
+									process_button_image(
+										&pool,
+										&button_detail.src,
+										button_detail.alt.clone(),
+										button_detail.links_to.clone()
+									).await
+								{
+									Ok(Some(button_id)) => {
+										if
+											let Err(e) = sqlx
+												::query(
+													"INSERT INTO buttons_relations (button_id, website_id, links_to_url) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
+												)
+												.bind(button_id)
+												.bind(website_id)
+												.bind(button_detail.links_to.clone())
+												.execute(&pool).await
+										{
+											eprintln!("Failed to insert button relation: {}", e);
+										}
+									}
+									Ok(None) => {}
+									Err(_e) => {}
+								}
+							}
+
+							if let Some(links_to_url) = &button_detail.links_to {
+								if
+									!PROHIBITED_LINKS.iter().any(|&prohibited|
+										links_to_url.contains(prohibited)
+									)
+								{
+									new_urls.push(links_to_url.clone());
+								}
+							}
+
+							if
+								!is_image_url(&button_detail.src) &&
+								!PROHIBITED_LINKS.iter().any(|&prohibited|
+									button_detail.src.contains(prohibited)
+								)
+							{
+								new_urls.push(button_detail.src.clone());
 							}
 						}
 					}
 					Err(e) => {
-						eprintln!("Failed to insert website {}: {}", current_url, e);
+						eprintln!("Failed to insert website {}: {}", url, e);
+					}
+				}
+				
+				for link in response.links.iter_mut() {
+					if !link.href.starts_with("http://") && !link.href.starts_with("https://") {
+						let base_url = url.trim_end_matches('/');
+						let clean_link = link.href.trim_start_matches('/');
+						let normalized_link = format!("{}/{}", base_url, clean_link);
+						
+						// Don't append trailing slash if it's a file
+						let normalized_link = if normalized_link.matches(r"\.(html|htm|php|asp|aspx|jsp|cgi|pl|py|rb|js|css|xml|json|txt|pdf|doc|docx|zip|tar|gz|rar|7z|exe|dmg|pkg|deb|rpm)$").next().is_some() {
+							normalized_link
+						} else if !normalized_link.ends_with("/") {
+							format!("{}/", normalized_link)
+						} else {
+							normalized_link
+						};
+						
+						link.href = normalized_link;
+					}
+
+					if
+						!PROHIBITED_LINKS.iter().any(|&prohibited|
+							link.href.contains(prohibited)
+						)
+					{
+						new_urls.push(link.href.clone());
 					}
 				}
 			}
-		});
+			Err(e) => {
+				eprintln!("Error scraping {}: {}", url, e);
+				if let Err(db_err) = sqlx
+					::query("UPDATE websites SET is_scraped = TRUE WHERE url = $1")
+					.bind(&url)
+					.execute(&pool).await
+				{
+					eprintln!("Failed to mark website as scraped due to error: {}", db_err);
+				}
+			}
+		}
 
-		queue = queue_clone.lock().await.clone();
-		
-		// Limit queue size to prevent memory issues
-		if queue.len() > 1000 {
-			queue.truncate(500);
+		// Add new URLs to queue
+		{
+			let mut queue = page_queue.lock().await;
+			let scraped = page_scraped.lock().await;
+
+			for new_url in new_urls {
+				if
+					!scraped.contains(&new_url) &&
+					!PROHIBITED_LINKS.iter().any(|&prohibited|
+						new_url.contains(prohibited)
+					) &&
+					*scraped_count.lock().await < max_pages
+				{
+					queue.push_back(new_url);
+				}
+			}
+		}
+
+		let current_count = *scraped_count.lock().await;
+		pb.set_position(current_count as u64);
+		pb.set_message(format!("Completed: {}", url));
+
+		sleep(Duration::from_millis(100)).await;
+	}
+
+	// Wait for all remaining tasks to complete
+	while let Some(result) = tasks.join_next().await {
+		if let Ok((new_urls, completed_url)) = result {
+			let mut queue = page_queue.lock().await;
+			let scraped = page_scraped.lock().await;
+
+			for new_url in new_urls {
+				let new_url: String = new_url;
+				if
+					!scraped.contains(&new_url) &&
+					!PROHIBITED_LINKS.iter().any(|&prohibited|
+						new_url.as_str().contains(prohibited)
+					) &&
+					*scraped_count.lock().await < max_pages
+				{
+					queue.push_back(new_url);
+				}
+			}
+
+			let current_count = *scraped_count.lock().await;
+			pb.set_position(current_count as u64);
+			pb.set_message(format!("Completed: {}", completed_url));
 		}
 	}
 
-	while let Some(result) = join_set.join_next().await {
-		if let Err(e) = result {
-			eprintln!("Task failed: {}", e);
-		}
-	}
-
-	progress_bar.finish_with_message("Scraping completed");
-
-	let response: Result<ScraperResponse, Box<dyn std::error::Error + Send + Sync>> = ScraperResponse::get(&args[1]).await;
-	println!("Scraper response: {:#?}", response);
-	
+	let final_count = *scraped_count.lock().await;
+	pb.finish_with_message(format!("Scraping completed. Total pages scraped: {}", final_count));
 	Ok(())
 }
