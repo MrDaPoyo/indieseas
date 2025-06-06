@@ -618,14 +618,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 			break;
 		}
 
-		// Get next URL from queue
 		let url = {
 			let mut queue = page_queue.lock().await;
 			queue.pop_front()
 		};
 
-		let Some(url) = url else {
-			break;
+		let url = match url {
+			Some(url) => url,
+			None => {
+				let rows = sqlx::query("SELECT url FROM websites WHERE is_scraped = FALSE ORDER BY scraped_at ASC NULLS FIRST LIMIT 100")
+					.fetch_all(&pool).await.unwrap_or_default();
+				
+				if rows.is_empty() {
+					break;
+				}
+				
+				let mut queue = page_queue.lock().await;
+				for row in rows {
+					let db_url = row.get::<String, _>("url");
+					if !page_scraped.lock().await.contains(&db_url) {
+						queue.push_back(db_url);
+					}
+				}
+				
+				// Try to get URL again
+				match queue.pop_front() {
+					Some(url) => url,
+					None => break,
+				}
+			}
 		};
 
 		// Check if already scraped
@@ -674,8 +695,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 			let mut count = scraped_count.lock().await;
 			*count += 1;
 		}
-
-		let mut new_urls = Vec::new();
 
 		match is_allowed(&url).await {
 			Ok(false) => {
@@ -807,23 +826,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 								}
 							}
 
+							// Insert button link target to database
 							if let Some(links_to_url) = &button_detail.links_to {
 								if
 									!PROHIBITED_LINKS.iter().any(|&prohibited|
 										links_to_url.contains(prohibited)
 									)
 								{
-									new_urls.push(links_to_url.clone());
+									let _ = sqlx::query(
+										"INSERT INTO websites (url, is_scraped) VALUES ($1, FALSE) ON CONFLICT (url) DO NOTHING"
+									)
+									.bind(links_to_url)
+									.execute(&pool).await;
 								}
 							}
 
+							// Insert button source URL to database if it's not an image
 							if
 								!is_image_url(&button_detail.src) &&
 								!PROHIBITED_LINKS.iter().any(|&prohibited|
 									button_detail.src.contains(prohibited)
 								)
 							{
-								new_urls.push(button_detail.src.clone());
+								let _ = sqlx::query(
+									"INSERT INTO websites (url, is_scraped) VALUES ($1, FALSE) ON CONFLICT (url) DO NOTHING"
+								)
+								.bind(&button_detail.src)
+								.execute(&pool).await;
 							}
 						}
 					}
@@ -850,12 +879,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 						link.href = normalized_link;
 					}
 
+					// Insert link URLs to database
 					if
 						!PROHIBITED_LINKS.iter().any(|&prohibited|
 							link.href.contains(prohibited)
 						)
 					{
-						new_urls.push(link.href.clone());
+						let _ = sqlx::query(
+							"INSERT INTO websites (url, is_scraped) VALUES ($1, FALSE) ON CONFLICT (url) DO NOTHING"
+						)
+						.bind(&link.href)
+						.execute(&pool).await;
 					}
 				}
 			}
@@ -871,24 +905,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 			}
 		}
 
-		// Add new URLs to queue
-		{
-			let mut queue = page_queue.lock().await;
-			let scraped = page_scraped.lock().await;
-
-			for new_url in new_urls {
-				if
-					!scraped.contains(&new_url) &&
-					!PROHIBITED_LINKS.iter().any(|&prohibited|
-						new_url.contains(prohibited)
-					) &&
-					*scraped_count.lock().await < max_pages
-				{
-					queue.push_back(new_url);
-				}
-			}
-		}
-
 		let current_count = *scraped_count.lock().await;
 		pb.set_position(current_count as u64);
 		pb.set_message(format!("Completed: {}", url));
@@ -899,19 +915,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	// Wait for all remaining tasks to complete
 	while let Some(result) = tasks.join_next().await {
 		if let Ok((new_urls, completed_url)) = result {
-			let mut queue = page_queue.lock().await;
-			let scraped = page_scraped.lock().await;
-
+			// Insert discovered URLs to database instead of adding to queue
 			for new_url in new_urls {
-				let new_url: String = new_url;
 				if
-					!scraped.contains(&new_url) &&
 					!PROHIBITED_LINKS.iter().any(|&prohibited|
-						new_url.as_str().contains(prohibited)
-					) &&
-					*scraped_count.lock().await < max_pages
+						new_url.contains(prohibited)
+					)
 				{
-					queue.push_back(new_url);
+					let _ = sqlx::query(
+						"INSERT INTO websites (url, is_scraped) VALUES ($1, FALSE) ON CONFLICT (url) DO NOTHING"
+					)
+					.bind(&new_url)
+					.execute(&pool).await;
 				}
 			}
 
