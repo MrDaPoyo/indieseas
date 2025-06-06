@@ -23,6 +23,8 @@ use tokio::time::sleep;
 mod robots;
 mod colorize;
 use robots::is_allowed;
+mod declutter;
+use declutter::analyze_text_frequency;
 use colorize::ColorAnalyzer;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Instant;
@@ -94,8 +96,9 @@ struct LinkResponse {
 	text: String,
 }
 
+#[derive(Debug)]
 struct ScraperResponse {
-	raw_text: String,
+	raw_text: HashMap<String, usize>,
 	title: Option<String>,
 	description: Option<String>,
 	links: Vec<LinkResponse>,
@@ -175,7 +178,7 @@ impl ScraperResponse {
 			.collect();
 
         Ok(ScraperResponse {
-            raw_text: json_response.raw_text,
+            raw_text: analyze_text_frequency(&json_response.raw_text),
             title: json_response.title,
             description: json_response.description,
             links,
@@ -492,425 +495,145 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let pool = initialize_db().await?;
 	println!("Database initialized successfully.");
 
-	let queue: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::new()));
-	let visited: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
-	let scraped_count: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
-	let button_count: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
-	let website_counts: Arc<Mutex<HashMap<String, usize>>> = Arc::new(Mutex::new(HashMap::new()));
-	let subfolder_counts: Arc<Mutex<HashMap<String, usize>>> = Arc::new(Mutex::new(HashMap::new()));
-	let latest_scraped_url: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
-	const MAX_PAGES_PER_WEBSITE: usize = 75;
-	const MAX_PAGES_PER_SUBFOLDER: usize = 10;
-	let MAX_CONCURRENT_TASKS: usize = env::var("MAX_CONCURRENT_TASKS")
-		.ok()
-		.and_then(|s| s.parse::<usize>().ok())
-		.unwrap_or_else(|| 10);
-	let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_TASKS));
-
-	if args.len() < 2 || args[1] == "--clean" || args[1] == "-c" {
-		println!("Cleaning links containing blacklisted items...");
-		
-		let mut blacklisted_items = PROHIBITED_LINKS.to_vec();
-		
-		if args.len() > 2 {
-			for arg in &args[2..] {
-				blacklisted_items.push(arg.as_str());
-			}
-		}
-		
-		for item in &blacklisted_items {
-			sqlx::query(
-				"DELETE FROM buttons_relations WHERE button_id IN (SELECT id FROM buttons WHERE url LIKE $1)"
-			)
-			.bind(format!("%{}%", item))
-			.execute(&pool).await?;
-			
-			sqlx::query(
-				"DELETE FROM buttons_relations WHERE website_id IN (SELECT id FROM websites WHERE url LIKE $1)"
-			)
-			.bind(format!("%{}%", item))
-			.execute(&pool).await?;
-			
-			let affected_websites = sqlx::query_scalar::<_, i64>(
-				"SELECT COUNT(*) FROM websites WHERE url LIKE $1"
-			)
-			.bind(format!("%{}%", item))
-			.fetch_optional(&pool).await?
-			.unwrap_or(0);
-			
-			sqlx::query(
-				"DELETE FROM websites WHERE url LIKE $1"
-			)
-			.bind(format!("%{}%", item))
-			.execute(&pool).await?;
-			
-			let affected_buttons = sqlx::query_scalar::<_, i64>(
-				"SELECT COUNT(*) FROM buttons WHERE url LIKE $1"
-			)
-			.bind(format!("%{}%", item))
-			.fetch_optional(&pool).await?
-			.unwrap_or(0);
-			
-			sqlx::query(
-				"DELETE FROM buttons WHERE url LIKE $1"
-			)
-			.bind(format!("%{}%", item))
-			.execute(&pool).await?;
-			
-			if affected_websites > 0 || affected_buttons > 0 {
-				println!("Removed {} websites and {} buttons containing '{}'", affected_websites, affected_buttons, item);
-			}
-		}
-
-		// Fix malformed URLs with trailing slashes after file extensions
-		let malformed_urls = sqlx::query_as::<_, (String,)>(
-			"SELECT url FROM websites WHERE url ~ '\\.(html|htm|php|asp|aspx|jsp|cgi|pl|py|rb|js|css|xml|json|txt|pdf|doc|docx|zip|tar|gz|rar|7z|exe|dmg|pkg|deb|rpm)/$'"
-		)
-		.fetch_all(&pool).await?;
-
-		for (url,) in malformed_urls {
-			let corrected_url = url.trim_end_matches('/');
-			if corrected_url != url {
-				let exists = sqlx::query_scalar::<_, bool>(
-					"SELECT EXISTS(SELECT 1 FROM websites WHERE url = $1)"
-				)
-				.bind(corrected_url)
-				.fetch_one(&pool).await?;
-				
-				if exists {
-					println!("Deleting malformed URL {} (corrected version already exists: {})", url, corrected_url);
-					
-					sqlx::query("DELETE FROM websites_index WHERE website = $1")
-						.bind(&url)
-						.execute(&pool).await?;
-					
-					sqlx::query("DELETE FROM buttons_relations WHERE website_id IN (SELECT id FROM websites WHERE url = $1)")
-						.bind(&url)
-						.execute(&pool).await?;
-					
-					sqlx::query("DELETE FROM websites WHERE url = $1")
-						.bind(&url)
-						.execute(&pool).await?;
-				} else {
-					println!("Fixing malformed URL: {} -> {}", url, corrected_url);
-					
-					sqlx::query("UPDATE websites SET url = $1 WHERE url = $2")
-						.bind(corrected_url)
-						.bind(&url)
-						.execute(&pool).await?;
-					
-					sqlx::query("UPDATE websites_index SET website = $1 WHERE website = $2")
-						.bind(corrected_url)
-						.bind(&url)
-						.execute(&pool).await?;
-					
-					sqlx::query("UPDATE buttons_relations SET links_to_url = $1 WHERE links_to_url = $2")
-						.bind(corrected_url)
-						.bind(&url)
-						.execute(&pool).await?;
-				}
-			}
-		}
-		
-		println!("Database cleanup completed.");
+	const MAX_CONCURRENT_REQUESTS: usize = 10;
+	let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_REQUESTS));
+	let mut join_set = JoinSet::new();
+	if args.len() < 2 {
+		eprintln!("Usage: {} <url>", args[0]);
 		return Ok(());
 	}
 
+	let start_url = "https://thinliquid.dev/";
+	let mut queue = VecDeque::new();
+	let mut visited = HashSet::new();
+	queue.push_back(start_url.to_string());
 
-	let pb = ProgressBar::new(100000);
-	pb.set_style(
+	let progress_bar = ProgressBar::new(0);
+	progress_bar.set_style(
 		ProgressStyle::default_bar()
-			.template("{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos:>4}/{len:4} Pages | {msg}")
+			.template("{spinner:.green} [{elapsed_precise}] {pos}/{len} {msg}")
 			.unwrap()
-			.progress_chars("##-"),
 	);
 
-	let start_time = Instant::now();
-	let scraped_count_for_progress = scraped_count.clone();
-	let button_count_for_progress = button_count.clone();
-	let latest_scraped_url_for_progress = latest_scraped_url.clone();
-
-	let pb_clone = pb.clone();
-	tokio::spawn(async move {
-		loop {
-			let pages = *scraped_count_for_progress.lock().await;
-			let buttons = *button_count_for_progress.lock().await;
-			let latest_url = latest_scraped_url_for_progress.lock().await.clone();
-			let elapsed = start_time.elapsed().as_secs_f64();
-
-			let buttons_per_min = if elapsed > 0.0 { buttons as f64 / elapsed * 60.0 } else { 0.0 };
-
-			pb_clone.set_position(pages as u64);
-			pb_clone.set_message(format!(
-				"Buttons: {} ({:.1}/min) | {}",
-				buttons, buttons_per_min, latest_url
-			));
+	while let Some(current_url) = queue.pop_front() {
+		if visited.contains(&current_url) {
+			continue;
 		}
-	});
+		visited.insert(current_url.clone());
 
-	fn normalize_url(url: &str) -> String {
-		if let Ok(parsed) = url::Url::parse(url) {
-			let mut normalized = parsed.clone();
-			normalized.set_query(None);
-			normalized.to_string()
-		} else {
-			url.to_string()
-		}
-	}
+		progress_bar.set_message(format!("Processing: {}", current_url));
+		progress_bar.inc(1);
 
-	let rows = sqlx
-		::query(r#"SELECT url FROM websites WHERE is_scraped = FALSE"#)
-		.fetch_all(&pool).await?;
+		let permit = semaphore.clone().acquire_owned().await.unwrap();
+		let pool_clone = pool.clone();
+		let queue_clone = Arc::new(Mutex::new(queue.clone()));
 
-	let mut urls_to_scrape: Vec<String> = rows
-		.into_iter()
-		.map(|row| row.get::<String, _>("url"))
-		.collect();
-
-	if args.len() > 1 {
-		let input_urls: Vec<String> = args[1..].iter().map(|s| s.to_string()).collect();
-		for url in input_urls {
-			if !url.starts_with("http") {
-				println!("Skipping invalid URL: {}", url);
-				continue;
+		join_set.spawn(async move {
+			let _permit = permit;
+			
+			if is_url_already_scraped(&pool_clone, &current_url).await.unwrap_or(false) {
+				return;
 			}
-			if !is_allowed(&url).await.unwrap_or(false) {
-				println!("URL not allowed by robots.txt: {}", url);
-				continue;
-			}
-			urls_to_scrape.push(url); 
-		}
-	}
 
-	if urls_to_scrape.is_empty() {
-		println!("No URLs found to scrape. Exiting...");
-		return Ok(());
-	}
-
-	for mut url in urls_to_scrape {
-		if !url.ends_with("/") {
-			if !url.ends_with(".php") && !url.ends_with(".html") && !url.ends_with(".htm") && !url.ends_with(".asp") && !url.ends_with(".aspx") {
-				url = format!("{}/", url);
-			}
-			queue.lock().await.push_back(url);
-		} else {
-			queue.lock().await.push_back(url);
-		}
-	}
-
-	let mut join_set = JoinSet::new();
-	while scraped_count.lock().await.clone() < 100000 {
-		let current_url = {
-			let mut queue_guard = queue.lock().await;
-			queue_guard.pop_front()
-		};
-
-		if let Some(url) = current_url {
-			let permit = semaphore.clone().acquire_owned().await.unwrap();
-			let pool_clone = pool.clone();
-			let queue_clone = queue.clone();
-			let visited_clone = visited.clone();
-			let scraped_count_clone = scraped_count.clone();
-			let button_count_clone = button_count.clone();
-			let website_counts_clone = website_counts.clone();
-			let subfolder_counts_clone = subfolder_counts.clone();
-			let latest_scraped_url_clone = latest_scraped_url.clone();
-
-			join_set.spawn(async move {
-				let _permit = permit;
-				
-				let normalized_url = normalize_url(&url);
-				
-				if visited_clone.lock().await.contains(&normalized_url) {
+			let response = match ScraperResponse::get(&current_url).await {
+				Ok(resp) => resp,
+				Err(e) => {
+					eprintln!("Failed to scrape {}: {}", current_url, e);
 					return;
 				}
-				
-				visited_clone.lock().await.insert(normalized_url.clone());
-				
-				let parsed_url = url::Url::parse(&url).ok();
-				let domain = parsed_url.as_ref()
-					.and_then(|u| u.host_str().map(|s| s.to_string()));
-				
-				let subfolder = parsed_url.as_ref()
-					.map(|u| {
-						let path = u.path();
-						let segments: Vec<&str> = path.trim_matches('/').split('/').collect();
-						if segments.len() > 1 {
-							format!("{}/{}", u.host_str().unwrap_or(""), segments[0])
-						} else {
-							u.host_str().unwrap_or("").to_string()
-						}
-					});
-				
-				// Check domain limit
-				if let Some(domain) = &domain {
-					let mut counts = website_counts_clone.lock().await;
-					let count = counts.entry(domain.clone()).or_insert(0);
-					if *count >= MAX_PAGES_PER_WEBSITE {
-						return;
-					}
-					*count += 1;
-				}
-				
-				// Check subfolder limit
-				if let Some(subfolder_key) = &subfolder {
-					let mut subfolder_counts = subfolder_counts_clone.lock().await;
-					let count = subfolder_counts.entry(subfolder_key.clone()).or_insert(0);
-					if *count >= MAX_PAGES_PER_SUBFOLDER {
-						return;
-					}
-					*count += 1;
-				}
+			};
 
-				if is_url_already_scraped(&pool_clone, &normalized_url).await.unwrap_or(true) {
-					return;
-				}
+			let mut button_ids = Vec::new();
+			let mut website_id = None;
 
-				match ScraperResponse::get(&url).await {
-					Ok(scraper_response) => {
-						*latest_scraped_url_clone.lock().await = url.clone();
+			// Process buttons first
+			for (button_url, button_detail) in &response.buttons {
+				if is_image_url(button_url).await {
+					if let Ok(Some(button_id)) = process_button_image(
+						&pool_clone,
+						button_url,
+						button_detail.alt.clone(),
+						button_detail.links_to.clone()
+					).await {
+						button_ids.push((button_id, button_detail.links_to.clone()));
+					}
+				}
+			}
+
+			// Only insert website if it has 88x31 buttons
+			if !button_ids.is_empty() {
+				let raw_text_string = response.raw_text
+					.iter()
+					.map(|(word, count)| format!("{} ", word.repeat(*count)))
+					.collect::<String>();
+
+				match insert_website(
+					&pool_clone,
+					&current_url,
+					response.title,
+					response.description,
+					&raw_text_string
+				).await {
+					Ok(id) => {
+						website_id = Some(id);
 						
-						let mut page_button_count = 0;
-						let mut button_ids = Vec::new();
-						
-						for (_, button_details) in &scraper_response.buttons {
-							if is_image_url(&button_details.src).await {
-								match sqlx::query_scalar::<_, bool>(
-									"SELECT EXISTS(SELECT 1 FROM buttons WHERE url = $1)"
-								)
-								.bind(&button_details.src)
-								.fetch_one(&pool_clone).await {
-									Ok(exists) if !exists => {
-										match process_button_image(
-											&pool_clone,
-											&button_details.src,
-											button_details.alt.clone(),
-											button_details.links_to.clone()
-										).await {
-											Ok(Some(button_id)) => {
-												page_button_count += 1;
-												button_ids.push((button_id, button_details.links_to.clone()));
-											},
-											Ok(None) => {},
-											Err(_e) => {}
-										}
-									},
-									Ok(_) => {
-										// Button already exists, still count it
-										if let Ok(button_id) = sqlx::query_scalar::<_, i32>(
-											"SELECT id FROM buttons WHERE url = $1"
-										)
-										.bind(&button_details.src)
-										.fetch_one(&pool_clone).await {
-											page_button_count += 1;
-											button_ids.push((button_id, button_details.links_to.clone()));
-										}
-									},
-									Err(e) => eprintln!("Failed to check button existence for {}: {}", button_details.src, e),
+						// Insert button relations
+						for (button_id, links_to) in button_ids {
+							let _ = sqlx::query(
+								r#"
+								INSERT INTO buttons_relations (button_id, website_id, links_to_url)
+								VALUES ($1, $2, $3)
+								ON CONFLICT DO NOTHING
+								"#
+							)
+							.bind(button_id)
+							.bind(id)
+							.bind(links_to.clone())
+							.execute(&pool_clone)
+							.await;
+
+							// Add links_to URLs to queue if they're not prohibited
+							if let Some(ref link_url) = links_to {
+								if !PROHIBITED_LINKS.iter().any(|&prohibited| link_url.contains(prohibited)) {
+									let mut queue_guard = queue_clone.lock().await;
+									queue_guard.push_back(link_url.clone());
 								}
 							}
 						}
-						
-						// 999 means no buttons / not a personal website
-						let status_code = if page_button_count > 0 { 200 } else { 999 };
-						
-						match insert_website(
-							&pool_clone,
-							&url,
-							scraper_response.title,
-							scraper_response.description,
-							&scraper_response.raw_text
-						).await {
-							Ok(website_id) => {
-								if page_button_count > 0 {
-									for (button_id, links_to) in button_ids {
-										if let Err(e) = sqlx::query(
-											r#"
-											INSERT INTO buttons_relations (button_id, website_id, links_to_url)
-											VALUES ($1, $2, $3)
-											ON CONFLICT (button_id, website_id) DO UPDATE SET links_to_url = $3
-											"#
-										)
-										.bind(button_id)
-										.bind(website_id)
-										.bind(links_to)
-										.execute(&pool_clone).await {
-											eprintln!("Failed to insert button relation: {}", e);
-										}
-									}
-									
-									*button_count_clone.lock().await += page_button_count;
-								}
-								
-								if let Err(e) = sqlx::query(
-									"UPDATE websites SET amount_of_buttons = $1, status_code = $2, is_scraped = TRUE WHERE id = $3"
-								)
-								.bind(page_button_count as i32)
-								.bind(status_code)
-								.bind(website_id)
-								.execute(&pool_clone).await {
-									eprintln!("Failed to update website status: {}", e);
-								}
 
-								for link in scraper_response.links {
-									if link.href.trim().is_empty() || link.text.trim().is_empty() {
-										continue;
-									}
-									
-									let link_url = if link.href.starts_with("http") {
-										link.href
-									} else if link.href.starts_with("/") {
-										format!("{}{}", url.trim_end_matches('/'), link.href)
-									} else {
-										format!("{}/{}", url.trim_end_matches('/'), link.href)
-									};
-
-									let normalized_link_url = normalize_url(&link_url);
-
-									if !PROHIBITED_LINKS.iter().any(|&prohibited| link_url.contains(prohibited)) &&
-									   !is_image_url(&link_url).await &&
-									   !is_url_already_scraped(&pool_clone, &normalized_link_url).await.unwrap_or(true) &&
-									   !visited_clone.lock().await.contains(&normalized_link_url) {
-										queue_clone.lock().await.push_back(link_url);
-									}
-								}
-
-								for (_, button_details) in &scraper_response.buttons {
-									if let Some(links_to) = &button_details.links_to {
-										let normalized_links_to = normalize_url(links_to);
-										
-										if !PROHIBITED_LINKS.iter().any(|&prohibited| links_to.contains(prohibited)) &&
-										   !is_image_url(links_to).await &&
-										   !is_url_already_scraped(&pool_clone, &normalized_links_to).await.unwrap_or(true) &&
-										   !visited_clone.lock().await.contains(&normalized_links_to) {
-											queue_clone.lock().await.push_back(links_to.clone());
-										}
-									}
-								}
-							},
-							Err(e) => eprintln!("Failed to insert website {}: {}", url, e),
+						// Add other links to queue
+						for link in &response.links {
+							if !PROHIBITED_LINKS.iter().any(|&prohibited| link.href.contains(prohibited)) {
+								let mut queue_guard = queue_clone.lock().await;
+								queue_guard.push_back(link.href.clone());
+							}
 						}
-					},
-					Err(_e) => {}
+					}
+					Err(e) => {
+						eprintln!("Failed to insert website {}: {}", current_url, e);
+					}
 				}
-
-				*scraped_count_clone.lock().await += 1;
-			});
-
-			while join_set.len() >= MAX_CONCURRENT_TASKS {
-				join_set.join_next().await;
 			}
-		} else {
-			sleep(Duration::from_millis(10)).await;
-			if join_set.is_empty() {
-				break;
-			}
+		});
+
+		queue = queue_clone.lock().await.clone();
+		
+		// Limit queue size to prevent memory issues
+		if queue.len() > 1000 {
+			queue.truncate(500);
 		}
 	}
 
-	while let Some(_) = join_set.join_next().await {}
-	
-	pb.finish_with_message("Scraping completed!");
+	while let Some(result) = join_set.join_next().await {
+		if let Err(e) = result {
+			eprintln!("Task failed: {}", e);
+		}
+	}
+
+	progress_bar.finish_with_message("Scraping completed");
+
+	let response: Result<ScraperResponse, Box<dyn std::error::Error + Send + Sync>> = ScraperResponse::get(&args[1]).await;
+	println!("Scraper response: {:#?}", response);
 	
 	Ok(())
 }
