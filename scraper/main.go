@@ -5,6 +5,7 @@ import (
 	"os"
 	"fmt"
 	"strings"
+	"encoding/json"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -53,4 +54,6 @@ func main() {
 	}
 
 	log.Println("Schema setup complete.")
+	
+	log.Println(FetchScraperWorker("https://thinliquid.dev/home"))
 }
