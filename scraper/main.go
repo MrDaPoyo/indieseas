@@ -5,7 +5,6 @@ import (
 	"os"
 	"fmt"
 	"strings"
-	"encoding/json"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
