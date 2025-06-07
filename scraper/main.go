@@ -57,4 +57,5 @@ func main() {
 	// log.Println(FetchScraperWorker("https://thinliquid.dev/home"))
 	log.Println(CheckRobotsTxt("https://thinliquid.dev/robots.txt"))
 	log.Println(CheckRobotsTxt("https://illiterate.nekoweb.org/robots.txt"))
+	log.Println(FetchButton("https://raw.githubusercontent.com/ThinLiquid/buttons/main/img/maxpixels.gif"))
 }
