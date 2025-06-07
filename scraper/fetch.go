@@ -38,24 +38,24 @@ func EncodeParam(s string) string {
     return url.QueryEscape(s)
 }
 
-func FetchButton(url string) []byte {
+func FetchButton(url string) ([]byte, int) {
 	resp, err := http.Get(url)
 	if err != nil {
 		fmt.Printf("Error fetching URL: %v\n", err)
-		return nil
+		return nil, 0
 	}
 	defer resp.Body.Close()
 
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" || (contentType != "image/png" && contentType != "image/jpeg" && contentType != "image/gif") {
 		fmt.Println("URL is not an image")
-		return nil
+		return nil, 0
 	}
 
 	img, _, err := image.Decode(resp.Body)
 	if err != nil {
 		fmt.Printf("Error decoding image: %v\n", err)
-		return nil
+		return nil, 0
 	}
 
 	bounds := img.Bounds()
@@ -68,7 +68,7 @@ func FetchButton(url string) []byte {
 		resp, err = http.Get(url)
 		if err != nil {
 			fmt.Printf("Error re-fetching URL: %v\n", err)
-			return nil
+			return nil, 0
 		}
 		defer resp.Body.Close()
 		
@@ -79,11 +79,9 @@ func FetchButton(url string) []byte {
 			buffer = append(buffer, scanner.Bytes()...)
 		}
 
-		return buffer
-	} else {
-		fmt.Printf("Image is %dx%d pixels, not 88x31\n", width, height)
+		return buffer, 200
 	}
-	return nil
+	return nil, 0
 }
 
 func VectorizeText(text string) []string {

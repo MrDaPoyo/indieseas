@@ -7,26 +7,32 @@ import (
 
 // Button represents a button entry in the database
 type Button struct {
-	URL            string         `db:"url" json:"url"`
-	StatusCode     int            `db:"status_code" json:"status_code"`
-	ColorTag       string         `db:"color_tag" json:"color_tag"`
-	ColorAverage   string         `db:"color_average" json:"color_average"`
-	ScrapedAt      string         `db:"scraped_at" json:"scraped_at"`
-	Alt            string         `db:"alt" json:"alt"`
-	Content        []byte         `db:"content" json:"content"`
+	URL          string `db:"url" json:"url"`
+	StatusCode   int    `db:"status_code" json:"status_code"`
+	ColorTag     string `db:"color_tag" json:"color_tag"`
+	ColorAverage string `db:"color_average" json:"color_average"`
+	ScrapedAt    string `db:"scraped_at" json:"scraped_at"`
+	Alt          string `db:"alt" json:"alt"`
+	Content      []byte `db:"content" json:"content"`
 }
 
 func InsertButton(db *sqlx.DB, button Button) error {
 	query := `INSERT INTO buttons (url, status_code, color_tag, color_average, scraped_at, alt, content)
 			  VALUES (:url, :status_code, :color_tag, :color_average, :scraped_at, :alt, :content)
-			  ON CONFLICT (url) DO UPDATE SET
-			  status_code = EXCLUDED.status_code,
-			  color_tag = EXCLUDED.color_tag,
-			  color_average = EXCLUDED.color_average,
-			  scraped_at = EXCLUDED.scraped_at,
-			  alt = EXCLUDED.alt,
-			  content = EXCLUDED.content
-			  ON CONFLICT DO NOTHING;`
+			  ON CONFLICT (url) DO NOTHING;`
+	if button.ScrapedAt == "" {
+		button.ScrapedAt = "now()"
+	}
 	_, err := db.NamedExec(query, button)
 	return err
+}
+
+func DoesButtonExist(db *sqlx.DB, url string) (bool, error) {
+	var exists bool
+	query := `SELECT EXISTS(SELECT 1 FROM buttons WHERE url = $1);`
+	err := db.Get(&exists, query, url)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
 }

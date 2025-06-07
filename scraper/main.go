@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -32,29 +31,6 @@ type ScraperButton struct {
 type ScraperLink struct {
 	Href string `json:"href"`
 	Text string `json:"text"`
-}
-
-type DBButton struct {
-	ID           *int       `db:"id"`
-	URL          *string    `db:"url"`
-	StatusCode   *int       `db:"status_code"`
-	ColorTag     *string    `db:"color_tag"`
-	ColorAverage *string    `db:"color_average"`
-	ScrapedAt    *time.Time `db:"scraped_at"`
-	Alt          *string    `db:"alt"`
-	Content      *[]byte    `db:"content"`
-}
-
-type DBWebsite struct {
-	ID              *int       `db:"id"`
-	URL             *string    `db:"url"`
-	IsScraped       *bool      `db:"is_scraped"`
-	StatusCode      *int       `db:"status_code"`
-	Title           *string    `db:"title"`
-	Description     *string    `db:"description"`
-	RawText         *string    `db:"raw_text"`
-	ScrapedAt       *time.Time `db:"scraped_at"`
-	AmountOfButtons *int       `db:"amount_of_buttons"`
 }
 
 var globalScrapedButtons = make(map[string]struct{})
@@ -93,7 +69,7 @@ func ScrapeSinglePage(url string) (*ScraperWorkerResponse, string, []ScraperButt
 			if _, seen := buttonSrcSet[src]; !seen {
 				found_buttons = append(found_buttons, button)
 				buttonSrcSet[src] = struct{}{}
-				globalScrapedButtons[src] = struct{}{}  // mark globally scraped
+				globalScrapedButtons[src] = struct{}{} // mark globally scraped
 			}
 			continue
 		}
@@ -131,7 +107,7 @@ func ScrapeSinglePage(url string) (*ScraperWorkerResponse, string, []ScraperButt
 	return &response, raw_text, found_buttons, found_links, internal_links, nil
 }
 
-func ScrapeEntireWebsite(rootURL string) ([]ScraperWorkerResponse, error) {
+func ScrapeEntireWebsite(Db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, error) {
 	robots, err := CheckRobotsTxt(rootURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check robots.txt: %w", err)
@@ -146,20 +122,49 @@ func ScrapeEntireWebsite(rootURL string) ([]ScraperWorkerResponse, error) {
 	var pages []ScraperWorkerResponse
 
 	if len(robots.Allowed) == 1 && robots.Allowed[0] == "*" {
-		resp, _, _, _, _, err := ScrapeSinglePage(rootURL)
+		resp, _, buttons, _, _, err := ScrapeSinglePage(rootURL)
 		if err != nil {
 			log.Printf("error scraping root url %q: %v", rootURL, err)
 		} else {
 			pages = append(pages, *resp)
+			for _, button := range buttons {
+				log.Printf("Found button: src=%s, linksTo=%s, alt=%s", button.Src, button.LinksTo, button.Alt)
+			}
 		}
 	} else {
 		for _, u := range robots.Allowed {
-			resp, _, _, _, _, err := ScrapeSinglePage(u)
+			resp, _, buttons, _, _, err := ScrapeSinglePage(u)
 			if err != nil {
 				log.Printf("error scraping allowed url %q: %v", u, err)
 				continue
 			}
 			pages = append(pages, *resp)
+			for _, button := range buttons {
+				if exists, _ := DoesButtonExist(Db, button.Src); exists {
+					log.Printf("Button already exists in database: %s", button.Src)
+					continue
+				}
+				var buttonContents, statusCode = FetchButton(button.Src)
+				if buttonContents == nil {
+					log.Printf("Failed to fetch button image from %s", button.Src)
+					continue
+				}
+				var ColorAnalysis = NewColorAnalyzer().AnalyzeImage(buttonContents)
+				colorTagStr := strings.Join(ColorAnalysis.Tags, ",")
+				var ButtonData = Button{
+					URL:          button.Src,
+					StatusCode:   statusCode,
+					ColorTag:     colorTagStr,
+					ColorAverage: ColorAnalysis.HexAverage,
+					Alt:          button.Alt,
+					Content:      buttonContents,
+
+				}
+				var err = InsertButton(Db, ButtonData)
+				if err != nil {
+					log.Printf("Failed to insert button data into database: %v", err)
+				}
+			}
 		}
 	}
 
@@ -240,5 +245,6 @@ func main() {
 	// log.Println(FetchButton("https://raw.githubusercontent.com/ThinLiquid/buttons/main/img/maxpixels.gif"))
 	// log.Println(ScrapeSinglePage("https://toastofthesewn.nekoweb.org/"))
 	// log.Println(NewColorAnalyzer().AnalyzeImage(FetchButton("https://raw.githubusercontent.com/ThinLiquid/buttons/main/img/maxpixels.gif")))
-	log.Println(ScrapeEntireWebsite("https://illiterate.nekoweb.org/"))
+	// log.Println(ScrapeEntireWebsite("https://illiterate.nekoweb.org/")) // example of a website that disallows scraping
+	log.Println(ScrapeEntireWebsite(db, "https://toastofthesewn.nekoweb.org/")) // example of a website that allows scraping
 }
