@@ -1,17 +1,36 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
-	"fmt"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 
- 	"github.com/joho/godotenv"
-
+	"github.com/joho/godotenv"
 )
+
+type ScraperButton struct {
+	Src     string  `json:"src"`
+	LinksTo string `json:"links_to"`
+	Alt     string  `json:"alt,omitempty"`
+}
+
+type ScraperLink struct {
+	Href string `json:"href"`
+	Text string `json:"text"`
+}
+
+type ScraperWorkerResponse struct {
+	RawText     string          `json:"rawText"`
+	Title       string          `json:"title"`
+	Description string          `json:"description"`
+	Buttons     []ScraperButton `json:"buttons"`
+	Links       []ScraperLink   `json:"links"`
+}
 
 func main() {
 
@@ -53,9 +72,22 @@ func main() {
 	}
 
 	log.Println("Schema setup complete.")
+
+	var response ScraperWorkerResponse
+	data, err := FetchScraperWorker("https://toastofthesewn.nekoweb.org/")
+
+	if err != nil {
+		log.Println("Error fetching scraper worker data:", err)
+		return
+	}
+
+	log.Println(data)
+
+	if err := json.Unmarshal([]byte(data), &response); err != nil {
+		log.Printf("Error unmarshalling JSON: %v", err)
+		return
+	}
 	
-	// log.Println(FetchScraperWorker("https://thinliquid.dev/home"))
-	log.Println(CheckRobotsTxt("https://thinliquid.dev/robots.txt"))
-	log.Println(CheckRobotsTxt("https://illiterate.nekoweb.org/robots.txt"))
+	log.Println(Declutter(response.RawText))
 	log.Println(FetchButton("https://raw.githubusercontent.com/ThinLiquid/buttons/main/img/maxpixels.gif"))
 }
