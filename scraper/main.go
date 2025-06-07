@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"io"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
@@ -80,14 +81,20 @@ func main() {
 		log.Println("Error fetching scraper worker data:", err)
 		return
 	}
+	
+	body, err := io.ReadAll(data.Body)
+	if err != nil {
+		log.Printf("Error reading response body: %v", err)
+		return
+	}
 
-	log.Println(data)
-
-	if err := json.Unmarshal([]byte(data), &response); err != nil {
+	if err := json.Unmarshal(body, &response); err != nil {
 		log.Printf("Error unmarshalling JSON: %v", err)
 		return
 	}
 	
-	log.Println(Declutter(response.RawText))
-	log.Println(FetchButton("https://raw.githubusercontent.com/ThinLiquid/buttons/main/img/maxpixels.gif"))
+	// log.Println(Declutter(response.RawText))
+	// log.Println(FetchButton("https://raw.githubusercontent.com/ThinLiquid/buttons/main/img/maxpixels.gif"))
+
+	log.Println(VectorizeText(Declutter(response.RawText)))
 }

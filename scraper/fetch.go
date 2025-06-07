@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"strings"
 	"bufio"
 	"fmt"
 	"os"
@@ -14,31 +16,22 @@ import (
 	"github.com/joho/godotenv"
 )
 
-func FetchScraperWorker(url string) (string, error) {
+func FetchScraperWorker(url string) (*http.Response, error) {
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("error loading .env file: %w", err)
+		return nil, fmt.Errorf("error loading .env file: %w", err)
 	}
 
 	worker := os.Getenv("SCRAPER_WORKER")
 	if worker == "" {
-		return "", fmt.Errorf("SCRAPER_WORKER not set in environment")
+		return nil, fmt.Errorf("SCRAPER_WORKER not set in environment")
 	}
 
 	resp, err := http.Get(worker + EncodeParam(url))
 	if err != nil {
 		panic(err)
 	}
-	defer resp.Body.Close()
 
-	scanner := bufio.NewScanner(resp.Body)
-	for i := 0; scanner.Scan() && i < 5; i++ {
-		fmt.Println(scanner.Text())
-	}
-	if err := scanner.Err(); err != nil {
-		panic(err)
-	}
-
-	return worker, nil
+	return resp, nil
 }
 
 func EncodeParam(s string) string {
@@ -89,6 +82,33 @@ func FetchButton(url string) []byte {
 		return buffer
 	} else {
 		fmt.Printf("Image is %dx%d pixels, not 88x31\n", width, height)
+	}
+	return nil
+}
+
+func VectorizeText(text string) []string {
+	jsonData := fmt.Sprintf(`{"text": "%s"}`, strings.ReplaceAll(text, `"`, `\"`))
+	resp, err := http.Post(os.Getenv("AI_API_EMBEDDING_URL"), "application/json", strings.NewReader(jsonData))
+	if err != nil {
+		fmt.Printf("Error vectorizing text: %v\n", err)
+		return nil
+	}
+	defer resp.Body.Close()
+	
+	var result struct {
+		Vectors [][]float64 `json:"vectors"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		fmt.Printf("Error decoding JSON response: %v\n", err)
+		return nil
+	}
+	
+	if len(result.Vectors) > 0 {
+		embeddings := make([]string, len(result.Vectors[0]))
+		for i, v := range result.Vectors[0] {
+			embeddings[i] = fmt.Sprintf("%f", v)
+		}
+		return embeddings
 	}
 	return nil
 }

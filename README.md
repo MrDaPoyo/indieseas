@@ -5,20 +5,21 @@
 1. Clone the repository:
 
    ```bash
-   git clone <repository-url>
-   cd indiesearch
+   git clone https://github.com/mrdapoyo/indieseas
+   cd indieseas
    ```
 
-2. Install dependencies:
+2. Install dependencies for the frontend:
 
    ```bash
+   cd frontend/
    npm install
    ```
 
-3. Build the project:
+3. Run the project!
 
    ```bash
-   npm run build
+   npm run dev
    ```
 
 ## Database Setup
@@ -34,12 +35,6 @@ CREATE EXTENSION vector;
 ## Running the Application
 
 ### Development Mode
-
-Start the frontend development server:
-
-```bash
-npm run dev
-```
 
 Default frontend port: 8080
 
