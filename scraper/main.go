@@ -3,10 +3,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
-	"io"
 	"strings"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -14,10 +15,18 @@ import (
 	"github.com/joho/godotenv"
 )
 
+type ScraperWorkerResponse struct {
+	RawText     string          `json:"rawText"`
+	Title       string          `json:"title"`
+	Description string          `json:"description"`
+	Buttons     []ScraperButton `json:"buttons"`
+	Links       []ScraperLink   `json:"links"`
+}
+
 type ScraperButton struct {
-	Src     string  `json:"src"`
+	Src     string `json:"src"`
 	LinksTo string `json:"links_to"`
-	Alt     string  `json:"alt,omitempty"`
+	Alt     string `json:"alt,omitempty"`
 }
 
 type ScraperLink struct {
@@ -25,12 +34,146 @@ type ScraperLink struct {
 	Text string `json:"text"`
 }
 
-type ScraperWorkerResponse struct {
-	RawText     string          `json:"rawText"`
-	Title       string          `json:"title"`
-	Description string          `json:"description"`
-	Buttons     []ScraperButton `json:"buttons"`
-	Links       []ScraperLink   `json:"links"`
+type DBButton struct {
+	ID           *int       `db:"id"`
+	URL          *string    `db:"url"`
+	StatusCode   *int       `db:"status_code"`
+	ColorTag     *string    `db:"color_tag"`
+	ColorAverage *string    `db:"color_average"`
+	ScrapedAt    *time.Time `db:"scraped_at"`
+	Alt          *string    `db:"alt"`
+	Content      *[]byte    `db:"content"`
+}
+
+type DBWebsite struct {
+	ID              *int       `db:"id"`
+	URL             *string    `db:"url"`
+	IsScraped       *bool      `db:"is_scraped"`
+	StatusCode      *int       `db:"status_code"`
+	Title           *string    `db:"title"`
+	Description     *string    `db:"description"`
+	RawText         *string    `db:"raw_text"`
+	ScrapedAt       *time.Time `db:"scraped_at"`
+	AmountOfButtons *int       `db:"amount_of_buttons"`
+}
+
+var globalScrapedButtons = make(map[string]struct{})
+
+func ScrapeSinglePage(url string) (*ScraperWorkerResponse, string, []ScraperButton, []ScraperLink, []ScraperLink, error) {
+	resp, err := FetchScraperWorker(url)
+	if err != nil {
+		return nil, "", nil, nil, nil, fmt.Errorf("error fetching scraper worker: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var response ScraperWorkerResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, "", nil, nil, nil, fmt.Errorf("error decoding JSON response: %w", err)
+	}
+
+	var found_links []ScraperLink
+	var internal_links []ScraperLink
+	var found_buttons []ScraperButton
+	var raw_text = Declutter(response.RawText)
+
+	// prevent duplicates on this page
+	buttonSrcSet := make(map[string]struct{})
+	linkHrefSet := make(map[string]struct{})
+
+	for _, button := range response.Buttons {
+		src := button.Src
+
+		// skip if we've already scraped this URL in a previous page
+		if _, seenGlobally := globalScrapedButtons[src]; seenGlobally {
+			continue
+		}
+
+		// external image-button
+		if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
+			if _, seen := buttonSrcSet[src]; !seen {
+				found_buttons = append(found_buttons, button)
+				buttonSrcSet[src] = struct{}{}
+				globalScrapedButtons[src] = struct{}{}  // mark globally scraped
+			}
+			continue
+		}
+
+		// non-http src: treat button.LinksTo as link
+		to := strings.TrimSpace(button.LinksTo)
+		if to != "" {
+			if strings.HasPrefix(to, "http://") || strings.HasPrefix(to, "https://") {
+				if _, seen := linkHrefSet[to]; !seen {
+					found_links = append(found_links, ScraperLink{Href: to, Text: button.Alt})
+					linkHrefSet[to] = struct{}{}
+				}
+			} else {
+				if _, seen := linkHrefSet[src]; !seen {
+					internal_links = append(internal_links, ScraperLink{Href: src, Text: button.Alt})
+					linkHrefSet[src] = struct{}{}
+				}
+			}
+		}
+	}
+
+	for _, link := range response.Links {
+		href := link.Href
+		if _, seen := linkHrefSet[href]; seen {
+			continue
+		}
+		if strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://") {
+			found_links = append(found_links, link)
+		} else {
+			internal_links = append(internal_links, link)
+		}
+		linkHrefSet[href] = struct{}{}
+	}
+
+	return &response, raw_text, found_buttons, found_links, internal_links, nil
+}
+
+func ScrapeEntireWebsite(rootURL string) ([]ScraperWorkerResponse, error) {
+	robots, err := CheckRobotsTxt(rootURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check robots.txt: %w", err)
+	}
+	if robots == nil {
+		robots = &RobotsResult{
+			Allowed:    []string{rootURL},
+			Disallowed: []string{},
+		}
+	}
+
+	var pages []ScraperWorkerResponse
+
+	if len(robots.Allowed) == 1 && robots.Allowed[0] == "*" {
+		resp, _, _, _, _, err := ScrapeSinglePage(rootURL)
+		if err != nil {
+			log.Printf("error scraping root url %q: %v", rootURL, err)
+		} else {
+			pages = append(pages, *resp)
+		}
+	} else {
+		for _, u := range robots.Allowed {
+			resp, _, _, _, _, err := ScrapeSinglePage(u)
+			if err != nil {
+				log.Printf("error scraping allowed url %q: %v", u, err)
+				continue
+			}
+			pages = append(pages, *resp)
+		}
+	}
+
+	for _, u := range robots.Disallowed {
+		pages = append(pages, ScraperWorkerResponse{
+			Title:       fmt.Sprintf("DISALLOWED [900] %s", u),
+			Description: "Scraping disallowed by robots.txt, status=900",
+			RawText:     "",
+			Buttons:     nil,
+			Links:       nil,
+		})
+	}
+
+	return pages, nil
 }
 
 func main() {
@@ -81,7 +224,7 @@ func main() {
 		log.Println("Error fetching scraper worker data:", err)
 		return
 	}
-	
+
 	body, err := io.ReadAll(data.Body)
 	if err != nil {
 		log.Printf("Error reading response body: %v", err)
@@ -92,9 +235,10 @@ func main() {
 		log.Printf("Error unmarshalling JSON: %v", err)
 		return
 	}
-	
+
 	// log.Println(Declutter(response.RawText))
 	// log.Println(FetchButton("https://raw.githubusercontent.com/ThinLiquid/buttons/main/img/maxpixels.gif"))
-
-	log.Println(VectorizeText(Declutter(response.RawText)))
+	// log.Println(ScrapeSinglePage("https://toastofthesewn.nekoweb.org/"))
+	// log.Println(NewColorAnalyzer().AnalyzeImage(FetchButton("https://raw.githubusercontent.com/ThinLiquid/buttons/main/img/maxpixels.gif")))
+	log.Println(ScrapeEntireWebsite("https://illiterate.nekoweb.org/"))
 }

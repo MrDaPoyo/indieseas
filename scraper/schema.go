@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-
 	"github.com/jmoiron/sqlx"
 )
 
@@ -22,7 +21,7 @@ func CreateSchema(db *sqlx.DB) error {
 
 		`CREATE TABLE IF NOT EXISTS buttons (
 			id SERIAL PRIMARY KEY,
-			url TEXT NOT NULL UNIQUE,
+			url TEXT NOT NULL,
 			status_code INTEGER,
 			color_tag TEXT,
 			color_average TEXT,

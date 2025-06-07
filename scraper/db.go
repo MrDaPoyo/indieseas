@@ -25,7 +25,8 @@ func InsertButton(db *sqlx.DB, button Button) error {
 			  color_average = EXCLUDED.color_average,
 			  scraped_at = EXCLUDED.scraped_at,
 			  alt = EXCLUDED.alt,
-			  content = EXCLUDED.content;`
+			  content = EXCLUDED.content
+			  ON CONFLICT DO NOTHING;`
 	_, err := db.NamedExec(query, button)
 	return err
 }
