@@ -54,5 +54,7 @@ func main() {
 
 	log.Println("Schema setup complete.")
 	
-	log.Println(FetchScraperWorker("https://thinliquid.dev/home"))
+	// log.Println(FetchScraperWorker("https://thinliquid.dev/home"))
+	log.Println(CheckRobotsTxt("https://thinliquid.dev/robots.txt"))
+	log.Println(CheckRobotsTxt("https://illiterate.nekoweb.org/robots.txt"))
 }
