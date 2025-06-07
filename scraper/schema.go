@@ -21,7 +21,7 @@ func CreateSchema(db *sqlx.DB) error {
 
 		`CREATE TABLE IF NOT EXISTS buttons (
 			id SERIAL PRIMARY KEY,
-			url TEXT NOT NULL,
+			url TEXT NOT NULL UNIQUE,
 			status_code INTEGER,
 			color_tag TEXT,
 			color_average TEXT,

@@ -27,6 +27,12 @@ func InsertButton(db *sqlx.DB, button Button) error {
 	return err
 }
 
+func InsertWebsite(db *sqlx.DB, url string) error {
+	query := `INSERT INTO websites (url) VALUES ($1) ON CONFLICT (url) DO NOTHING;`
+	_, err := db.Exec(query, url)
+	return err
+}
+
 func DoesButtonExist(db *sqlx.DB, url string) (bool, error) {
 	var exists bool
 	query := `SELECT EXISTS(SELECT 1 FROM buttons WHERE url = $1);`
