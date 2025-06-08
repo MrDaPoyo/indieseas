@@ -37,13 +37,12 @@ export const GET: APIRoute = async (request) => {
 					b.color_average, 
 					b.scraped_at, 
 					b.alt, 
-					b.title, 
 					b.content,
-					COALESCE(COUNT(br.id), 0) as website_count
+					COALESCE(COUNT(DISTINCT br.website_id), 0) as website_count
 				FROM buttons b
 				LEFT JOIN buttons_relations br ON b.id = br.button_id
 				WHERE b.color_tag ILIKE ${searchQuery} 
-				GROUP BY b.id, b.url, b.color_tag, b.color_average, b.scraped_at, b.alt, b.title, b.content
+				GROUP BY b.id, b.url, b.color_tag, b.color_average, b.scraped_at, b.alt, b.content
 				ORDER BY b.id 
 				LIMIT ${pageSize} 
 				OFFSET ${offset}`;
@@ -64,13 +63,12 @@ export const GET: APIRoute = async (request) => {
 					b.color_average, 
 					b.scraped_at, 
 					b.alt, 
-					b.title, 
 					b.content,
-					COALESCE(COUNT(br.id), 0) as website_count
+					COALESCE(COUNT(DISTINCT br.website_id), 0) as website_count
 				FROM buttons b
 				LEFT JOIN buttons_relations br ON b.id = br.button_id
 				WHERE b.url ILIKE ${searchQuery} 
-				GROUP BY b.id, b.url, b.color_tag, b.color_average, b.scraped_at, b.alt, b.title, b.content
+				GROUP BY b.id, b.url, b.color_tag, b.color_average, b.scraped_at, b.alt, b.content
 				ORDER BY b.id 
 				LIMIT ${pageSize} 
 				OFFSET ${offset}`;
@@ -81,21 +79,24 @@ export const GET: APIRoute = async (request) => {
 			);
 
 			buttonsQuery = sql`
-				SELECT 
-					b.id, 
-					b.url as button_text, 
-					b.color_tag, 
-					'' as website_url, 
-					b.color_average, 
-					b.scraped_at, 
-					b.alt, 
-					b.title, 
-					b.content,
-					COALESCE(COUNT(br.id), 0) as website_count
-				FROM buttons b
-				LEFT JOIN buttons_relations br ON b.id = br.button_id
-				GROUP BY b.id, b.url, b.color_tag, b.color_average, b.scraped_at, b.alt, b.title, b.content
-				ORDER BY b.id 
+					SELECT 
+						b.id, 
+						b.url as button_text, 
+						b.color_tag, 
+						'' as website_url, 
+						b.color_average, 
+						b.scraped_at, 
+						b.alt, 
+						b.content,
+						COALESCE(sub.website_count, 0) as website_count
+					FROM buttons b
+					LEFT JOIN (
+						SELECT button_id, COUNT(DISTINCT website_id) AS website_count
+						FROM buttons_relations
+						GROUP BY button_id
+					) AS sub ON b.id = sub.button_id
+				GROUP BY b.id, b.url, b.color_tag, b.color_average, b.scraped_at, b.alt, b.content, sub.website_count
+				ORDER BY b.scraped_at DESC
 				LIMIT ${pageSize} 
 				OFFSET ${offset}`;
 		}
@@ -117,6 +118,8 @@ export const GET: APIRoute = async (request) => {
 			}
 		};
 
+		console.log(response.buttons[0]);
+
 		return new Response(
 			JSON.stringify(response),
 			{
@@ -127,6 +130,7 @@ export const GET: APIRoute = async (request) => {
 			}
 		);
 	} catch (err) {
+		console.error("Database query failed:", err);
 		return new Response(
 			JSON.stringify({
 				error: "Failed to fetch from database",
