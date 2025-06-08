@@ -76,11 +76,31 @@ type ScraperLink struct {
 
 var globalScrapedButtons = make(map[string]struct{})
 
-func AppendLink(baseURL string, href string) string {
+func isForbidden(url string) bool {
+	for _, fw := range FORBIDDEN_WEBSITES {
+		if strings.Contains(url, fw) {
+			return true
+		}
+	}
+	return false
+}
+
+func AppendLink(baseURL, href string) string {
+	// strip off any fragment identifiers to prevent repeated “#/” loops
+	if i := strings.Index(href, "#"); i != -1 {
+		href = href[:i]
+	}
+	// if href is now empty, just return the base URL (normalized)
+	if href == "" {
+		return strings.TrimSuffix(baseURL, "/") + "/"
+	}
+
+	// fully qualified URL
 	if strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://") {
 		return strings.TrimSuffix(href, "/") + "/"
 	}
 
+	// absolute path on same host
 	if strings.HasPrefix(href, "/") {
 		var protoHost string
 		if idx := strings.Index(baseURL, "://"); idx != -1 {
@@ -93,8 +113,8 @@ func AppendLink(baseURL string, href string) string {
 		return strings.TrimSuffix(protoHost, "/") + href
 	}
 
+	// relative path
 	href = strings.TrimSuffix(href, "/")
-
 	base := strings.TrimSuffix(baseURL, "/")
 	return base + "/" + href
 }
@@ -214,7 +234,6 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 		log.Printf("error checking robots.txt for %q: %v", rootURL, err)
 		return nil, fmt.Errorf("error checking robots.txt for %q: %w", rootURL, err)
 	}
-
 	if robots != nil {
 		for _, path := range robots.Disallowed {
 			disURL := normalizeURL(AppendLink(rootURL, path))
@@ -225,13 +244,16 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 		}
 	}
 
-	for len(queue) > 0 {
-		// stop once we've scraped 75 pages
-		if len(pages) >= 75 {
-			log.Printf("Reached page limit (%d), stopping crawl.", 75)
-			break
-		}
+	type pageInfo struct {
+		url        string
+		resp       *ScraperWorkerResponse
+		rawText    string
+		buttons    []ScraperButton
+		statusCode int
+	}
+	var pageInfos []pageInfo
 
+	for len(queue) > 0 && len(pages) < 75 {
 		raw := queue[0]
 		queue = queue[1:]
 		url := normalizeURL(raw)
@@ -240,32 +262,45 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 		}
 		seen[url] = struct{}{}
 
-		time.Sleep(500 * time.Millisecond) // rate limit to avoid overwhelming servers
+		time.Sleep(500 * time.Millisecond)
 
-		resp, rawText, buttons, links, internalLinks, statusCode, err := ScrapeSinglePage(url, rootURL)
+		resp, rawText, buttons, links, internalLinks, statusCode, err :=
+			ScrapeSinglePage(url, rootURL)
 		if err != nil {
 			continue
 		}
-		pages = append(pages, *resp)
 
-		// external links
+		pages = append(pages, *resp)
+		pageInfos = append(pageInfos, pageInfo{url, resp, rawText, buttons, statusCode})
+
+		// enqueue/discover links under the same root; external ones go to DB
 		for _, link := range links {
 			href := normalizeURL(AppendLink(url, link.Href))
-			if err := InsertWebsite(db, href); err != nil {}
+			if strings.HasPrefix(href, rootURL) {
+				if _, ok := seen[href]; !ok {
+					queue = append(queue, href)
+				}
+			} else {
+				InsertWebsite(db, href)
+			}
 		}
 
-		// buttons
+		// process buttons (images) and enqueue any button‐linked pages under root
 		for _, btn := range buttons {
-			if _, err := ProcessButton(db, btn.Src, btn); err != nil {}
+			ProcessButton(db, btn.Src, btn)
 			to := normalizeURL(btn.LinksTo)
 			if strings.HasPrefix(to, "http://") || strings.HasPrefix(to, "https://") {
-				if err := InsertWebsite(db, to); err != nil {
-					log.Printf("error inserting website from button %q: %v", to, err)
+				if strings.HasPrefix(to, rootURL) {
+					if _, ok := seen[to]; !ok {
+						queue = append(queue, to)
+					}
+				} else {
+					InsertWebsite(db, to)
 				}
 			}
 		}
 
-		// enqueue internal links
+		// also enqueue explicitly identified internal links
 		for _, l := range internalLinks {
 			if len(pages) >= 75 {
 				break
@@ -275,50 +310,46 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 				queue = append(queue, next)
 			}
 		}
+	}
 
-		// insert embeddings & metadata
-		rawText = strings.TrimSpace(rawText)
+	// index & mark every scraped page
+	for _, info := range pageInfos {
+		rawText := strings.TrimSpace(info.rawText)
+		resp := info.resp
+
 		resp.Title = strings.TrimSpace(resp.Title)
 		resp.Description = strings.TrimSpace(resp.Description)
-
 		if len(resp.Title) > 500 {
-			resp.Title = resp.Title[:100]
+			resp.Title = resp.Title[:500]
 		}
 		if len(resp.Description) > 500 {
 			resp.Description = resp.Description[:500]
 		}
+		if len(rawText) > 5000 {
+			rawText = rawText[:5000]
+		}
 
-		if rawText != "" && statusCode >= 200 && statusCode < 300 && len(buttons) > 0 {
-			if err := InsertWebsite(db, url, statusCode); err != nil {
-				log.Printf("error inserting website %q with status %d: %v", url, statusCode, err)
-			}
-			if len(rawText) > 5000 {
-				rawText = rawText[:5000]
-			}
-			if err := InsertEmbeddings(db, url, VectorizeText(rawText), "body"); err != nil {
-				log.Printf("error inserting embeddings for %q: %v", url, err)
-			}
+		InsertWebsite(db, info.url, info.statusCode)
+		if rawText != "" && info.statusCode >= 200 && info.statusCode < 300 {
+			InsertEmbeddings(db, info.url, VectorizeText(rawText), "body")
 			if resp.Title != "" {
-				if err := InsertEmbeddings(db, url, VectorizeText(resp.Title), "title"); err != nil {
-					log.Printf("error inserting title embeddings for %q: %v", url, err)
-				}
+				InsertEmbeddings(db, info.url, VectorizeText(resp.Title), "title")
 			}
 			if resp.Description != "" {
-				if err := InsertEmbeddings(db, url, VectorizeText(resp.Description), "description"); err != nil {
-					log.Printf("error inserting description embeddings for %q: %v", url, err)
-				}
+				InsertEmbeddings(db, info.url, VectorizeText(resp.Description), "description")
 			}
-			UpdateWebsite(db, Website{
-				URL:             url,
-				IsScraped:       true,
-				StatusCode:      statusCode,
-				Title:           resp.Title,
-				Description:     resp.Description,
-				RawText:         rawText,
-				ScrapedAt:       time.Now(),
-				AmountOfButtons: len(buttons),
-			})
 		}
+
+		UpdateWebsite(db, Website{
+			URL:             info.url,
+			IsScraped:       true,
+			StatusCode:      info.statusCode,
+			Title:           resp.Title,
+			Description:     resp.Description,
+			RawText:         rawText,
+			ScrapedAt:       time.Now(),
+			AmountOfButtons: len(info.buttons),
+		})
 	}
 
 	log.Printf("Scraped %d pages from %s", len(seen), rootURL)
@@ -384,34 +415,39 @@ func main() {
 
 	log.Printf("Retrieved %d pending websites to scrape.", len(website_queue))
 
-	jobs := make(chan Website, len(website_queue))
-	var wg sync.WaitGroup
+	// limit concurrency using a semaphore pattern
 	workerCount := 10
+	sem := make(chan struct{}, workerCount)
+	var wg sync.WaitGroup
 
-	// start workers
-	for i := 1; i <= workerCount; i++ {
+	for _, site := range website_queue {		
+		if isForbidden(site.URL) {
+			log.Printf("Skipping prohibited website: %s", site.URL)
+			continue
+		}
+
+		// acquire semaphore slot and increment wait group
+		sem <- struct{}{}
 		wg.Add(1)
-		go func(id int) {
+
+		go func(site Website) {
 			defer wg.Done()
-			for website := range jobs {
-				log.Printf("Worker %d processing website: %s", id, website.URL)
-				if _, err := ScrapeEntireWebsite(db, website.URL); err != nil {
-					log.Printf("Error scraping website %s: %v", website.URL, err)
-				} else {
-					log.Printf("Successfully scraped website: %s", website.URL)
-				}
+			defer func() { <-sem }() // release the slot
+
+			log.Printf("Processing website: %s", site.URL)
+			if _, err := ScrapeEntireWebsite(db, site.URL); err != nil {
+				log.Printf("Error scraping website %s: %v", site.URL, err)
+			} else {
+				log.Printf("Successfully scraped website: %s", site.URL)
 			}
-		}(i)
+		}(site)
 	}
 
-	// enqueue jobs
-	for _, website := range website_queue {
-		jobs <- website
-	}
-	close(jobs)
-
-	// wait for all workers to finish
+	// wait for all workers to finish before refreshing the queue
 	wg.Wait()
+
+	// refresh the queue with any newly added pending websites
+	website_queue, _ = RetrievePendingWebsites(db)
 
 	// log.Println(Declutter(response.RawText))
 	// log.Println(FetchButton("https://raw.githubusercontent.com/ThinLiquid/buttons/main/img/maxpixels.gif"))
