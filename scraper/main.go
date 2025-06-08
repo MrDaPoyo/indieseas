@@ -77,9 +77,19 @@ type ScraperLink struct {
 
 var globalScrapedButtons = make(map[string]struct{})
 
-func isForbidden(url string) bool {
+func isForbidden(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+
 	for _, fw := range FORBIDDEN_WEBSITES {
-		if strings.Contains(url, fw) {
+		if strings.HasPrefix(fw, ".") {
+			if host == fw[1:] || strings.HasSuffix(host, fw) {
+				return true
+			}
+		} else if strings.Contains(host, fw) {
 			return true
 		}
 	}
@@ -87,27 +97,43 @@ func isForbidden(url string) bool {
 }
 
 func AppendLink(baseURL, href string) string {
-	// strip off any fragment
+	// Remove fragment
 	if i := strings.Index(href, "#"); i != -1 {
 		href = href[:i]
 	}
 
-	// parse the base URL
 	base, err := url.Parse(baseURL)
 	if err != nil {
-		// fallback to raw href
-		return strings.TrimSuffix(href, "/") + "/"
+		return strings.TrimSuffix(href, "/")
 	}
 
-	// ResolveReference will handle absolute URLs, absolute paths and relative paths
 	ref, err := base.Parse(href)
 	if err != nil {
-		return strings.TrimSuffix(href, "/") + "/"
+		return strings.TrimSuffix(href, "/")
 	}
 
-	// ensure consistent trailing slash
-	out := ref.String()
-	return strings.TrimSuffix(out, "/") + "/"
+	// Handle trailing slashes intelligently
+	path := ref.Path
+	if !strings.Contains(path, ".") { // Directory-like path
+		if !strings.HasSuffix(path, "/") {
+			path += "/"
+		}
+	} else { // File-like path
+		path = strings.TrimSuffix(path, "/")
+	}
+	ref.Path = path
+
+	return ref.String()
+}
+
+// Updated normalizeURL function
+func normalizeURL(u string) string {
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return strings.TrimSuffix(u, "/")
+	}
+	parsed.Fragment = ""
+	return strings.TrimSuffix(parsed.String(), "/")
 }
 
 func ProcessButton(Db *sqlx.DB, url string, button ScraperButton) (*Button, error) {
@@ -134,83 +160,99 @@ func ProcessButton(Db *sqlx.DB, url string, button ScraperButton) (*Button, erro
 }
 
 func ScrapeSinglePage(url string, baseURL string) (*ScraperWorkerResponse, string, []ScraperButton, []ScraperLink, []ScraperLink, int, error) {
-	resp, err := FetchScraperWorker(url)
-	if err != nil {
-		return nil, "", nil, nil, nil, 0, fmt.Errorf("error fetching scraper worker: %w", err)
-	}
-	defer resp.Body.Close()
+    // First check if the target URL itself is forbidden
+    if isForbidden(url) {
+        return nil, "", nil, nil, nil, 403, fmt.Errorf("forbidden website: %s", url)
+    }
 
-	statusCode := resp.StatusCode
+    resp, err := FetchScraperWorker(url)
+    if err != nil {
+        return nil, "", nil, nil, nil, 0, fmt.Errorf("error fetching scraper worker: %w", err)
+    }
+    defer resp.Body.Close()
 
-	var response ScraperWorkerResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, "", nil, nil, nil, statusCode, fmt.Errorf("error decoding JSON response: %w", err)
-	}
+    statusCode := resp.StatusCode
 
-	var found_links []ScraperLink
-	var internal_links []ScraperLink
-	var found_buttons []ScraperButton
-	var raw_text = Declutter(response.RawText)
+    var response ScraperWorkerResponse
+    if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+        return nil, "", nil, nil, nil, statusCode, fmt.Errorf("error decoding JSON response: %w", err)
+    }
 
-	// prevent duplicates on this page
-	buttonSrcSet := make(map[string]struct{})
-	linkHrefSet := make(map[string]struct{})
+    var found_links []ScraperLink
+    var internal_links []ScraperLink
+    var found_buttons []ScraperButton
+    var raw_text = Declutter(response.RawText)
 
-	for _, button := range response.Buttons {
-		src := button.Src
+    // prevent duplicates on this page
+    buttonSrcSet := make(map[string]struct{})
+    linkHrefSet := make(map[string]struct{})
 
-		if _, seenGlobally := globalScrapedButtons[src]; seenGlobally {
-			continue
-		}
+    for _, button := range response.Buttons {
+        src := button.Src
 
-		// external image-button
-		if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
-			if _, seen := buttonSrcSet[src]; !seen {
-				found_buttons = append(found_buttons, button)
-				buttonSrcSet[src] = struct{}{}
-				globalScrapedButtons[src] = struct{}{}
-			}
-			continue
-		}
+        if _, seenGlobally := globalScrapedButtons[src]; seenGlobally {
+            continue
+        }
 
-		// non-http src: treat button.LinksTo as link
-		to := strings.TrimSpace(button.LinksTo)
-		if to != "" {
-			to = AppendLink(baseURL, to)
-			if strings.HasPrefix(to, "http://") || strings.HasPrefix(to, "https://") {
-				if _, seen := linkHrefSet[to]; !seen {
-					log.Printf("Found external link from button: %s -> %s", src, to)
-					found_links = append(found_links, ScraperLink{Href: to, Text: button.Alt})
-					linkHrefSet[to] = struct{}{}
-				}
-			} else {
-				if _, seen := linkHrefSet[src]; !seen {
-					internal_links = append(internal_links, ScraperLink{Href: AppendLink(url, src), Text: button.Alt})
-					linkHrefSet[src] = struct{}{}
-				}
-			}
-		}
-	}
+        // For button sources, we still want to process them even if they're from forbidden domains
+        if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
+            if _, seen := buttonSrcSet[src]; !seen {
+                found_buttons = append(found_buttons, button)
+                buttonSrcSet[src] = struct{}{}
+                globalScrapedButtons[src] = struct{}{}
+            }
+            continue
+        }
 
-	for _, link := range response.Links {
-		href := AppendLink(url, link.Href)
-		if _, seen := linkHrefSet[href]; seen {
-			continue
-		}
-		if strings.HasPrefix(href, url) {
-			internal_links = append(internal_links, link)
-		} else {
-			found_links = append(found_links, link)
-		}
-		linkHrefSet[href] = struct{}{}
-	}
+        // For button links, check if they're forbidden
+        to := strings.TrimSpace(button.LinksTo)
+        if to != "" {
+            to = AppendLink(baseURL, to)
+            normalizedTo := normalizeURL(to)
+            
+            if strings.HasPrefix(to, "http://") || strings.HasPrefix(to, "https://") {
+                if isForbidden(normalizedTo) {
+                    log.Printf("Skipping forbidden button link: %s", normalizedTo)
+                    continue
+                }
+                
+                if _, seen := linkHrefSet[normalizedTo]; !seen {
+                    log.Printf("Found external link from button: %s -> %s", src, normalizedTo)
+                    found_links = append(found_links, ScraperLink{Href: normalizedTo, Text: button.Alt})
+                    linkHrefSet[normalizedTo] = struct{}{}
+                }
+            } else {
+                if _, seen := linkHrefSet[src]; !seen {
+                    internal_links = append(internal_links, ScraperLink{Href: AppendLink(url, src), Text: button.Alt})
+                    linkHrefSet[src] = struct{}{}
+                }
+            }
+        }
+    }
 
-	return &response, raw_text, found_buttons, found_links, internal_links, statusCode, nil
-}
+    for _, link := range response.Links {
+        href := AppendLink(url, link.Href)
+        normalizedHref := normalizeURL(href)
+        
+        if _, seen := linkHrefSet[normalizedHref]; seen {
+            continue
+        }
+        
+        // Skip forbidden external links
+        if !strings.HasPrefix(href, url) && isForbidden(normalizedHref) {
+            log.Printf("Skipping forbidden external link: %s", normalizedHref)
+            continue
+        }
 
-// normalizeURL removes any trailing slash so URLs are compared consistently
-func normalizeURL(u string) string {
-	return strings.TrimSuffix(u, "/")
+        if strings.HasPrefix(href, url) {
+            internal_links = append(internal_links, link)
+        } else {
+            found_links = append(found_links, link)
+        }
+        linkHrefSet[normalizedHref] = struct{}{}
+    }
+
+    return &response, raw_text, found_buttons, found_links, internal_links, statusCode, nil
 }
 
 func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, error) {
@@ -344,9 +386,6 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 	}
 
 	log.Printf("Scraped %d pages from %s", len(seen), rootURL)
-	for u := range seen {
-		log.Println(u)
-	}
 	return pages, nil
 }
 
@@ -391,9 +430,7 @@ func main() {
 
 	log.Println("Schema setup complete.")
 
-	var website_queue, _ = RetrievePendingWebsites(db)
-
-	if os.Args != nil && len(os.Args) > 1 {
+	if len(os.Args) > 1 {
 		rootURL := os.Args[1]
 		log.Printf("Starting scrape for root URL: %s", rootURL)
 		if _, err := ScrapeEntireWebsite(db, rootURL); err != nil {
@@ -402,43 +439,55 @@ func main() {
 		}
 		log.Printf("Successfully scraped root URL: %s", rootURL)
 		return
-	}
-
-	log.Printf("Retrieved %d pending websites to scrape.", len(website_queue))
-
-	// limit concurrency using a semaphore pattern
-	workerCount := 10
-	sem := make(chan struct{}, workerCount)
-	var wg sync.WaitGroup
-
-	for _, site := range website_queue {		
-		if isForbidden(site.URL) {
-			log.Printf("Skipping prohibited website: %s", site.URL)
-			continue
-		}
-
-		// acquire semaphore slot and increment wait group
-		sem <- struct{}{}
-		wg.Add(1)
-
-		go func(site Website) {
-			defer wg.Done()
-			defer func() { <-sem }() // release the slot
-
-			log.Printf("Processing website: %s", site.URL)
-			if _, err := ScrapeEntireWebsite(db, site.URL); err != nil {
-				log.Printf("Error scraping website %s: %v", site.URL, err)
-			} else {
-				log.Printf("Successfully scraped website: %s", site.URL)
+	} else {
+		for {
+			website_queue, err := RetrievePendingWebsites(db)
+			if err != nil {
+				log.Printf("Error retrieving pending websites: %v", err)
+				time.Sleep(30 * time.Second)
+				continue
 			}
-		}(site)
+
+			if len(website_queue) == 0 {
+				log.Println("No pending websites. Sleeping for 30 seconds.")
+				time.Sleep(30 * time.Second)
+				continue
+			}
+
+			log.Printf("Processing %d pending websites", len(website_queue))
+
+			// Worker setup
+			workerCount := 10
+			sem := make(chan struct{}, workerCount)
+			var wg sync.WaitGroup
+
+			for _, site := range website_queue {
+				if isForbidden(site.URL) {
+					log.Printf("Skipping prohibited website: %s", site.URL)
+					continue
+				}
+
+				sem <- struct{}{}
+				wg.Add(1)
+
+				go func(site Website) {
+					defer wg.Done()
+					defer func() { <-sem }()
+
+					log.Printf("Scraping website: %s", site.URL)
+					if _, err := ScrapeEntireWebsite(db, site.URL); err != nil {
+						log.Printf("Error scraping %s: %v", site.URL, err)
+					} else {
+						log.Printf("Successfully scraped %s", site.URL)
+					}
+				}(site)
+			}
+
+			wg.Wait()
+			log.Println("Batch processing complete. Sleeping for 10 seconds.")
+			time.Sleep(10 * time.Second)
+		}
 	}
-
-	// wait for all workers to finish before refreshing the queue
-	wg.Wait()
-
-	// refresh the queue with any newly added pending websites
-	website_queue, _ = RetrievePendingWebsites(db)
 
 	// log.Println(Declutter(response.RawText))
 	// log.Println(FetchButton("https://raw.githubusercontent.com/ThinLiquid/buttons/main/img/maxpixels.gif"))
