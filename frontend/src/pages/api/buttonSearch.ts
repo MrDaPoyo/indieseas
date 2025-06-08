@@ -118,8 +118,6 @@ export const GET: APIRoute = async (request) => {
 			}
 		};
 
-		console.log(response.buttons[0]);
-
 		return new Response(
 			JSON.stringify(response),
 			{
