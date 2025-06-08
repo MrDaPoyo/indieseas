@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"strings"
@@ -66,7 +65,6 @@ func ProcessButton(Db *sqlx.DB, url string, button ScraperButton) (*Button, erro
 	}
 	var buttonContents, statusCode = FetchButton(url)
 	if buttonContents == nil {
-		log.Printf("Failed to fetch button image from %s", url)
 		return nil, fmt.Errorf("failed to fetch button image from %s", url)
 	}
 	var ColorAnalysis = NewColorAnalyzer().AnalyzeImage(buttonContents)
@@ -129,8 +127,11 @@ func ScrapeSinglePage(url string) (*ScraperWorkerResponse, string, []ScraperButt
 		// non-http src: treat button.LinksTo as link
 		to := strings.TrimSpace(button.LinksTo)
 		if to != "" {
+
 			if strings.HasPrefix(to, "http://") || strings.HasPrefix(to, "https://") {
 				if _, seen := linkHrefSet[to]; !seen {
+					to = AppendLink(url, to)
+					log.Printf("Found external link from button: %s -> %s", src, to)
 					found_links = append(found_links, ScraperLink{Href: to, Text: button.Alt})
 					linkHrefSet[to] = struct{}{}
 				}
@@ -148,10 +149,10 @@ func ScrapeSinglePage(url string) (*ScraperWorkerResponse, string, []ScraperButt
 		if _, seen := linkHrefSet[href]; seen {
 			continue
 		}
-		if strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://") {
-			found_links = append(found_links, link)
-		} else {
+		if strings.HasPrefix(href, url) {
 			internal_links = append(internal_links, link)
+		} else {
+			found_links = append(found_links, link)
 		}
 		linkHrefSet[href] = struct{}{}
 	}
@@ -159,163 +160,81 @@ func ScrapeSinglePage(url string) (*ScraperWorkerResponse, string, []ScraperButt
 	return &response, raw_text, found_buttons, found_links, internal_links, nil
 }
 
-func ScrapeEntireWebsite(Db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, error) {
+func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, error) {
+	var (
+		pages []ScraperWorkerResponse
+		queue = []string{rootURL}
+		seen  = make(map[string]struct{})
+	)
+
 	robots, err := CheckRobotsTxt(rootURL)
+
 	if err != nil {
-		return nil, fmt.Errorf("failed to check robots.txt: %w", err)
+		log.Printf("error checking robots.txt for %q: %v", rootURL, err)
+		return nil, fmt.Errorf("error checking robots.txt for %q: %w", rootURL, err)
 	}
-	if robots == nil {
-		robots = &RobotsResult{
-			Allowed:    []string{rootURL},
-			Disallowed: []string{},
+
+	if robots != nil {
+		for _, path := range robots.Disallowed {
+			disallowedURL := AppendLink(rootURL, path)
+
+			// enqueue it so we still “visit” it, but mark as disallowed
+			seen[disallowedURL] = struct{}{}
+			log.Println("Disallowed URL found:", disallowedURL)
+
+			// insert into DB with special status code 999
+			if err := InsertWebsite(db, disallowedURL, 999); err != nil {
+				log.Printf("error inserting disallowed URL %q with status 999: %v", disallowedURL, err)
+			}
 		}
 	}
 
-	var pages []ScraperWorkerResponse
+	for len(queue) > 0 {
+		url := queue[0]
+		queue = queue[1:]
+		if _, ok := seen[url]; ok {
+			continue
+		}
+		seen[url] = struct{}{}
 
-	if len(robots.Allowed) == 1 && robots.Allowed[0] == "*" {
-		resp, _, buttons, links, internalLinks, err := ScrapeSinglePage(rootURL)
+		resp, _, buttons, links, internalLinks, err := ScrapeSinglePage(url)
 		if err != nil {
-			log.Printf("error scraping root url %q: %v", rootURL, err)
-		} else {
-			pages = append(pages, *resp)
+			log.Printf("error scraping %q: %v", url, err)
+			continue
+		}
+		pages = append(pages, *resp)
 
-			for _, link := range links {
-				if err := InsertWebsite(Db, link.Href); err != nil {
-					log.Printf("error inserting website %q: %v", link.Href, err)
-				}
+		// insert external links into DB
+		for _, link := range links {
+			link.Href = AppendLink(url, link.Href)
+			if err := InsertWebsite(db, link.Href); err != nil {
+				log.Printf("error inserting website %q: %v", link.Href, err)
 			}
+		}
 
-			for _, button := range buttons {
-				log.Printf("Found button: src=%s, linksTo=%s, alt=%s", button.Src, button.LinksTo, button.Alt)
-				if button.LinksTo != "" && (strings.HasPrefix(button.LinksTo, "http://") || strings.HasPrefix(button.LinksTo, "https://")) {
-					if err := InsertWebsite(Db, button.LinksTo); err != nil {
-						log.Printf("error inserting website from button LinksTo %q: %v", button.LinksTo, err)
-					}
-				}
-			}
-
-			scrapedUrls := make(map[string]struct{})
-			scrapedUrls[rootURL] = struct{}{}
-
-			for _, link := range internalLinks {
-				if _, scraped := scrapedUrls[link.Href]; !scraped {
-					resp, _, buttons, moreLinks, moreInternalLinks, err := ScrapeSinglePage(link.Href)
-					if err != nil {
-						log.Printf("error scraping internal url %q: %v", link.Href, err)
-						continue
-					}
-					pages = append(pages, *resp)
-					scrapedUrls[link.Href] = struct{}{}
-
-					for _, link := range moreLinks {
-						if err := InsertWebsite(Db, link.Href); err != nil {
-							log.Printf("error inserting website %q: %v", link.Href, err)
-						}
-					}
-
-					for _, newLink := range moreInternalLinks {
-						if _, scraped := scrapedUrls[newLink.Href]; !scraped {
-							internalLinks = append(internalLinks, newLink)
-						}
-					}
-
-					for _, button := range buttons {
-						log.Printf("Found button: src=%s, linksTo=%s, alt=%s", button.Src, button.LinksTo, button.Alt)
-						if button.LinksTo != "" && (strings.HasPrefix(button.LinksTo, "http://") || strings.HasPrefix(button.LinksTo, "https://")) {
-							if err := InsertWebsite(Db, button.LinksTo); err != nil {
-								log.Printf("error inserting website from button LinksTo %q: %v", button.LinksTo, err)
-							}
-						}
-					}
+		// process buttons
+		for _, btn := range buttons {
+			if _, err := ProcessButton(db, btn.Src, btn); err != nil {}
+			if to := btn.LinksTo; strings.HasPrefix(to, "http://") || strings.HasPrefix(to, "https://") {
+				if err := InsertWebsite(db, to); err != nil {
+					log.Printf("error inserting website from button %q: %v", to, err)
 				}
 			}
 		}
-	} else {
-		scrapedUrls := make(map[string]struct{})
 
-		for _, u := range robots.Allowed {
-			if _, scraped := scrapedUrls[u]; scraped {
-				continue
-			}
-
-			resp, _, buttons, links, internalLinks, err := ScrapeSinglePage(u)
-			if err != nil {
-				log.Printf("error scraping allowed url %q: %v", u, err)
-				continue
-			}
-			pages = append(pages, *resp)
-			scrapedUrls[u] = struct{}{}
-
-			// Add external links to database
-			for _, link := range links {
-				if err := InsertWebsite(Db, link.Href); err != nil {
-					log.Printf("error inserting website %q: %v", link.Href, err)
-				}
-			}
-
-			for _, link := range internalLinks {
-				if _, scraped := scrapedUrls[link.Href]; !scraped {
-					fullURL := link.Href
-					if !strings.HasPrefix(fullURL, "http://") && !strings.HasPrefix(fullURL, "https://") {
-						baseURL := strings.TrimSuffix(u, "/")
-						if strings.HasPrefix(link.Href, "/") {
-							fullURL = baseURL + link.Href
-						} else {
-							fullURL = baseURL + "/" + link.Href
-						}
-					}
-					resp, _, _, moreLinks, moreInternalLinks, err := ScrapeSinglePage(fullURL)
-					if err != nil {
-						log.Printf("error scraping internal url %q: %v", link.Href, err)
-						continue
-					}
-					pages = append(pages, *resp)
-					scrapedUrls[link.Href] = struct{}{}
-
-					// Add external links to database
-					for _, link := range moreLinks {
-						if err := InsertWebsite(Db, link.Href); err != nil {
-							log.Printf("error inserting website %q: %v", link.Href, err)
-						}
-					}
-
-					// Add newly found internal links to scrape
-					for _, newLink := range moreInternalLinks {
-						if _, scraped := scrapedUrls[newLink.Href]; !scraped {
-							internalLinks = append(internalLinks, newLink)
-						}
-					}
-				}
-			}
-
-			for _, button := range buttons {
-				if _, err := ProcessButton(Db, button.Src, button); err != nil {
-					log.Printf("error processing button %q: %v", button.Src, err)
-				} else {
-					log.Printf("Processed button: src=%s, linksTo=%s, alt=%s", button.Src, button.LinksTo, button.Alt)
-				}
-
-				// Add button LinksTo to database if it's a URL
-				if button.LinksTo != "" && (strings.HasPrefix(button.LinksTo, "http://") || strings.HasPrefix(button.LinksTo, "https://")) {
-					if err := InsertWebsite(Db, button.LinksTo); err != nil {
-						log.Printf("error inserting website from button LinksTo %q: %v", button.LinksTo, err)
-					}
-				}
+		// enqueue internal links for further scraping
+		for _, l := range internalLinks {
+			next := AppendLink(url, l.Href)
+			if _, ok := seen[next]; !ok {
+				queue = append(queue, next)
 			}
 		}
 	}
 
-	for _, u := range robots.Disallowed {
-		pages = append(pages, ScraperWorkerResponse{
-			Title:       fmt.Sprintf("DISALLOWED [900] %s", u),
-			Description: "Scraping disallowed by robots.txt, status=900",
-			RawText:     "",
-			Buttons:     nil,
-			Links:       nil,
-		})
+	log.Printf("Scraped %d pages from %s", len(seen), rootURL)
+	for url := range seen {
+		log.Println(url)
 	}
-
 	return pages, nil
 }
 
@@ -360,31 +279,12 @@ func main() {
 
 	log.Println("Schema setup complete.")
 
-	var response ScraperWorkerResponse
-	data, err := FetchScraperWorker("https://toastofthesewn.nekoweb.org/")
-
-	if err != nil {
-		log.Println("Error fetching scraper worker data:", err)
-		return
-	}
-
-	body, err := io.ReadAll(data.Body)
-	if err != nil {
-		log.Printf("Error reading response body: %v", err)
-		return
-	}
-
-	if err := json.Unmarshal(body, &response); err != nil {
-		log.Printf("Error unmarshalling JSON: %v", err)
-		return
-	}
-
 	// log.Println(Declutter(response.RawText))
 	// log.Println(FetchButton("https://raw.githubusercontent.com/ThinLiquid/buttons/main/img/maxpixels.gif"))
 	// log.Println(ScrapeSinglePage("https://toastofthesewn.nekoweb.org/"))
 	// log.Println(NewColorAnalyzer().AnalyzeImage(FetchButton("https://raw.githubusercontent.com/ThinLiquid/buttons/main/img/maxpixels.gif")))
-	// log.Println(ScrapeEntireWebsite("https://illiterate.nekoweb.org/")) // example of a website that disallows scraping
-	// log.Println(ScrapeEntireWebsite(db, "https://toastofthesewn.nekoweb.org/")) // example of a website that allows scraping
+	// ScrapeEntireWebsite(db, "https://illiterate.nekoweb.org/") // example of a website that disallows scraping
+	ScrapeEntireWebsite(db, "https://toastofthesewn.nekoweb.org/") // example of a website that allows scraping
 	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test", "/img/maxpixels.gif"))
 	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test/", "/img/maxpixels/"))
 	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test/", "img/maxpixels.gif"))
