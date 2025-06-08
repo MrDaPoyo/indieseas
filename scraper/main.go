@@ -37,41 +37,26 @@ var globalScrapedButtons = make(map[string]struct{})
 
 func AppendLink(baseURL string, href string) string {
 	if strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://") {
-		return href
+		return strings.TrimSuffix(href, "/") + "/"
 	}
-	
-	if strings.HasPrefix(href, "/") {
-		// Extract protocol and hostname from baseURL
-		if strings.HasPrefix(baseURL, "https://") {
-			hostname := strings.Split(baseURL[8:], "/")[0]
-			return "https://" + hostname + href
-		}
-		if strings.HasPrefix(baseURL, "http://") {
-			hostname := strings.Split(baseURL[7:], "/")[0]
-			return "http://" + hostname + href
-		}
-	} else {
 
-		if strings.HasSuffix(baseURL, "/") {
-			return baseURL + href
-		}
-		return baseURL + href
-	}
-	
-	
 	if strings.HasPrefix(href, "/") {
-		return baseURL + href
-	}
-	if strings.Contains(href, ".") && !strings.Contains(href, "/") {
-		if strings.HasSuffix(baseURL, "/") {
-			return baseURL + href
+		// Extract scheme and host
+		var protoHost string
+		if idx := strings.Index(baseURL, "://"); idx != -1 {
+			rest := baseURL[idx+3:]
+			host := strings.Split(rest, "/")[0]
+			protoHost = baseURL[:idx+3] + host
+		} else {
+			protoHost = baseURL
 		}
-		return baseURL + "/" + href
+		return strings.TrimSuffix(protoHost, "/") + href
 	}
-	if strings.HasSuffix(baseURL, "/") {
-		return baseURL + href
-	}
-	return baseURL + "/" + href
+
+	href = strings.TrimSuffix(href, "/")
+
+	base := strings.TrimSuffix(baseURL, "/")
+	return base + "/" + href
 }
 
 func ProcessButton(Db *sqlx.DB, url string, button ScraperButton) (*Button, error) {
@@ -151,7 +136,7 @@ func ScrapeSinglePage(url string) (*ScraperWorkerResponse, string, []ScraperButt
 				}
 			} else {
 				if _, seen := linkHrefSet[src]; !seen {
-					internal_links = append(internal_links, ScraperLink{Href: src, Text: button.Alt})
+					internal_links = append(internal_links, ScraperLink{Href: AppendLink(url, src), Text: button.Alt})
 					linkHrefSet[src] = struct{}{}
 				}
 			}
@@ -159,7 +144,7 @@ func ScrapeSinglePage(url string) (*ScraperWorkerResponse, string, []ScraperButt
 	}
 
 	for _, link := range response.Links {
-		href := link.Href
+		href := AppendLink(url, link.Href)
 		if _, seen := linkHrefSet[href]; seen {
 			continue
 		}
@@ -194,13 +179,13 @@ func ScrapeEntireWebsite(Db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 			log.Printf("error scraping root url %q: %v", rootURL, err)
 		} else {
 			pages = append(pages, *resp)
-			
+
 			for _, link := range links {
 				if err := InsertWebsite(Db, link.Href); err != nil {
 					log.Printf("error inserting website %q: %v", link.Href, err)
 				}
 			}
-			
+
 			for _, button := range buttons {
 				log.Printf("Found button: src=%s, linksTo=%s, alt=%s", button.Src, button.LinksTo, button.Alt)
 				if button.LinksTo != "" && (strings.HasPrefix(button.LinksTo, "http://") || strings.HasPrefix(button.LinksTo, "https://")) {
@@ -310,7 +295,7 @@ func ScrapeEntireWebsite(Db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 				} else {
 					log.Printf("Processed button: src=%s, linksTo=%s, alt=%s", button.Src, button.LinksTo, button.Alt)
 				}
-				
+
 				// Add button LinksTo to database if it's a URL
 				if button.LinksTo != "" && (strings.HasPrefix(button.LinksTo, "http://") || strings.HasPrefix(button.LinksTo, "https://")) {
 					if err := InsertWebsite(Db, button.LinksTo); err != nil {
@@ -400,6 +385,10 @@ func main() {
 	// log.Println(NewColorAnalyzer().AnalyzeImage(FetchButton("https://raw.githubusercontent.com/ThinLiquid/buttons/main/img/maxpixels.gif")))
 	// log.Println(ScrapeEntireWebsite("https://illiterate.nekoweb.org/")) // example of a website that disallows scraping
 	// log.Println(ScrapeEntireWebsite(db, "https://toastofthesewn.nekoweb.org/")) // example of a website that allows scraping
-	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test", "/img/maxpixels.gif")) 
+	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test", "/img/maxpixels.gif"))
+	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test/", "/img/maxpixels/"))
 	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test/", "img/maxpixels.gif"))
+	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test/", "img/maxpixels.gif/"))
+	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test", "https://poyoweb.org/index.html"))
+	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test/", "https://poyoweb.org/index.html/"))
 }
