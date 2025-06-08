@@ -240,6 +240,8 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 		}
 		seen[url] = struct{}{}
 
+		time.Sleep(500 * time.Millisecond) // rate limit to avoid overwhelming servers
+
 		resp, rawText, buttons, links, internalLinks, statusCode, err := ScrapeSinglePage(url, rootURL)
 		if err != nil {
 			continue
