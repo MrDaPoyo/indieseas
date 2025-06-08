@@ -59,6 +59,17 @@ func InsertWebsite(db *sqlx.DB, url string, statusCodes ...int) error {
 	return err
 }
 
+func InsertEmbeddings(db *sqlx.DB, url string, embeddings []string, kind string) error {
+	query := `
+	INSERT INTO websites_index (website, embedding, type)
+	VALUES ($1, $2, $3)
+	ON CONFLICT (website, type) DO UPDATE
+		SET embedding = EXCLUDED.embedding;
+	`
+	_, err := db.Exec(query, url, embeddings, kind)
+	return err
+} 
+
 func UpdateWebsite(db *sqlx.DB, website Website) error {
 	query := `UPDATE websites SET is_scraped = $1, status_code = $2, title = $3, description = $4, raw_text = $5, scraped_at = $6, amount_of_buttons = $7
 			  WHERE url = $8;`

@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -40,7 +41,6 @@ func AppendLink(baseURL string, href string) string {
 	}
 
 	if strings.HasPrefix(href, "/") {
-		// Extract scheme and host
 		var protoHost string
 		if idx := strings.Index(baseURL, "://"); idx != -1 {
 			rest := baseURL[idx+3:]
@@ -85,16 +85,18 @@ func ProcessButton(Db *sqlx.DB, url string, button ScraperButton) (*Button, erro
 	return &ButtonData, err
 }
 
-func ScrapeSinglePage(url string) (*ScraperWorkerResponse, string, []ScraperButton, []ScraperLink, []ScraperLink, error) {
+func ScrapeSinglePage(url string, baseURL string) (*ScraperWorkerResponse, string, []ScraperButton, []ScraperLink, []ScraperLink, int, error) {
 	resp, err := FetchScraperWorker(url)
 	if err != nil {
-		return nil, "", nil, nil, nil, fmt.Errorf("error fetching scraper worker: %w", err)
+		return nil, "", nil, nil, nil, 0, fmt.Errorf("error fetching scraper worker: %w", err)
 	}
 	defer resp.Body.Close()
 
+	statusCode := resp.StatusCode
+
 	var response ScraperWorkerResponse
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, "", nil, nil, nil, fmt.Errorf("error decoding JSON response: %w", err)
+		return nil, "", nil, nil, nil, statusCode, fmt.Errorf("error decoding JSON response: %w", err)
 	}
 
 	var found_links []ScraperLink
@@ -109,7 +111,6 @@ func ScrapeSinglePage(url string) (*ScraperWorkerResponse, string, []ScraperButt
 	for _, button := range response.Buttons {
 		src := button.Src
 
-		// skip if we've already scraped this URL in a previous page
 		if _, seenGlobally := globalScrapedButtons[src]; seenGlobally {
 			continue
 		}
@@ -119,7 +120,7 @@ func ScrapeSinglePage(url string) (*ScraperWorkerResponse, string, []ScraperButt
 			if _, seen := buttonSrcSet[src]; !seen {
 				found_buttons = append(found_buttons, button)
 				buttonSrcSet[src] = struct{}{}
-				globalScrapedButtons[src] = struct{}{} // mark globally scraped
+				globalScrapedButtons[src] = struct{}{}
 			}
 			continue
 		}
@@ -127,10 +128,9 @@ func ScrapeSinglePage(url string) (*ScraperWorkerResponse, string, []ScraperButt
 		// non-http src: treat button.LinksTo as link
 		to := strings.TrimSpace(button.LinksTo)
 		if to != "" {
-
+			to = AppendLink(baseURL, to)
 			if strings.HasPrefix(to, "http://") || strings.HasPrefix(to, "https://") {
 				if _, seen := linkHrefSet[to]; !seen {
-					to = AppendLink(url, to)
 					log.Printf("Found external link from button: %s -> %s", src, to)
 					found_links = append(found_links, ScraperLink{Href: to, Text: button.Alt})
 					linkHrefSet[to] = struct{}{}
@@ -157,7 +157,7 @@ func ScrapeSinglePage(url string) (*ScraperWorkerResponse, string, []ScraperButt
 		linkHrefSet[href] = struct{}{}
 	}
 
-	return &response, raw_text, found_buttons, found_links, internal_links, nil
+	return &response, raw_text, found_buttons, found_links, internal_links, statusCode, nil
 }
 
 func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, error) {
@@ -197,7 +197,7 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 		}
 		seen[url] = struct{}{}
 
-		resp, _, buttons, links, internalLinks, err := ScrapeSinglePage(url)
+		resp, raw_text, buttons, links, internalLinks, statusCode, err := ScrapeSinglePage(url, rootURL)
 		if err != nil {
 			log.Printf("error scraping %q: %v", url, err)
 			continue
@@ -228,6 +228,49 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 			if _, ok := seen[next]; !ok {
 				queue = append(queue, next)
 			}
+		}
+
+		// insert vector embeddings into database
+		raw_text = strings.TrimSpace(raw_text)
+		resp.Title = strings.TrimSpace(resp.Title)
+		resp.Description = strings.TrimSpace(resp.Description)
+		if len(resp.Title) > 500 {
+			resp.Title = resp.Title[:100] // truncate title to 100 characters if too long
+		}
+		if len(resp.Description) > 500 {
+			resp.Description = resp.Description[:500] // truncate description to 500 characters if too long
+		}
+		if raw_text != "" {
+			if err := InsertWebsite(db, url, statusCode); err != nil {
+				log.Printf("error inserting website %q with status %d: %v", url, statusCode, err)
+			}
+			if len(raw_text) > 5000 {
+				raw_text = raw_text[:5000] //truncate to 5000 characters if too long
+			}
+			if err := InsertEmbeddings(db, url, VectorizeText(raw_text), "body"); err != nil {
+				log.Printf("error inserting embeddings for %q: %v", url, err)
+			}
+			if resp.Title != "" {
+				if err := InsertEmbeddings(db, url, VectorizeText(resp.Title), "title"); err != nil {
+					log.Printf("error inserting title embeddings for %q: %v", url, err)
+				}
+			}
+			if resp.Description != "" {
+				if err := InsertEmbeddings(db, url, VectorizeText(resp.Description), "description"); err != nil {
+					log.Printf("error inserting description embeddings for %q: %v", url, err)
+				}
+			}
+			InsertWebsite(db, url, statusCode)
+			UpdateWebsite(db, Website{
+				URL:         url,
+				IsScraped:   true,
+				StatusCode:  statusCode,
+				Title:       strings.TrimSpace(resp.Title),
+				Description: strings.TrimSpace(resp.Description),
+				RawText:     raw_text,
+				ScrapedAt:   time.Now(),
+				AmountOfButtons: len(buttons),
+			})
 		}
 	}
 
@@ -291,4 +334,5 @@ func main() {
 	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test/", "img/maxpixels.gif/"))
 	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test", "https://poyoweb.org/index.html"))
 	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test/", "https://poyoweb.org/index.html/"))
+	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test.html/", "second.html"))
 }
