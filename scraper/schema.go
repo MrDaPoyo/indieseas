@@ -22,7 +22,7 @@ func CreateSchema(db *sqlx.DB) error {
 		`CREATE TABLE IF NOT EXISTS buttons (
 			id SERIAL PRIMARY KEY,
 			url TEXT NOT NULL UNIQUE,
-			status_code INTEGER,
+			status_code INTEGER DEFAULT 0,
 			color_tag TEXT,
 			color_average TEXT,
 			scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -44,7 +44,8 @@ func CreateSchema(db *sqlx.DB) error {
 			id SERIAL PRIMARY KEY,
 			website TEXT NOT NULL,
 			embedding vector(512) NOT NULL,
-			type TEXT NOT NULL
+			type TEXT NOT NULL,
+			UNIQUE (website, type)
 		);`,
 
 		`CREATE INDEX IF NOT EXISTS embeddingIndex ON websites_index USING hnsw (embedding vector_cosine_ops);`,

@@ -1,14 +1,15 @@
 package main
 
 import (
-	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
+	"strings"
 
-	"time"
+	"github.com/jmoiron/sqlx"
+
 	"log"
+	"time"
+	"fmt"
 )
 
-// Button represents a button entry in the database
 type Button struct {
 	URL          string `db:"url" json:"url"`
 	StatusCode   int    `db:"status_code" json:"status_code"`
@@ -20,15 +21,15 @@ type Button struct {
 }
 
 type Website struct {
-	ID              int       `db:"id" json:"id"`
-	URL             string    `db:"url" json:"url"`
-	IsScraped       bool      `db:"is_scraped" json:"is_scraped"`
-	StatusCode      int       `db:"status_code" json:"status_code"`
-	Title           string    `db:"title" json:"title"`
-	Description     string    `db:"description" json:"description"`
-	RawText         string    `db:"raw_text" json:"raw_text"`
-	ScrapedAt       time.Time `db:"scraped_at" json:"scraped_at"`
-	AmountOfButtons int       `db:"amount_of_buttons" json:"amount_of_buttons"`
+	ID              int        `db:"id" json:"id"`
+	URL             string     `db:"url" json:"url"`
+	IsScraped       bool       `db:"is_scraped" json:"is_scraped"`
+	StatusCode      int        `db:"status_code" json:"status_code"`
+	Title           string     `db:"title" json:"title"`
+	Description     string     `db:"description" json:"description"`
+	RawText         string     `db:"raw_text" json:"raw_text"`
+	ScrapedAt       time.Time  `db:"scraped_at" json:"scraped_at"`
+	AmountOfButtons int        `db:"amount_of_buttons" json:"amount_of_buttons"`
 }
 
 func InsertButton(db *sqlx.DB, button Button) error {
@@ -41,8 +42,6 @@ func InsertButton(db *sqlx.DB, button Button) error {
 	_, err := db.NamedExec(query, button)
 	if err == nil {
 		log.Println("Inserted button:", button.URL)
-	} else {
-		log.Println("Failed to insert button:", button.URL, "Error:", err)
 	}
 	return err
 }
@@ -54,6 +53,14 @@ func InsertWebsite(db *sqlx.DB, url string, statusCodes ...int) error {
 	)
 
 	args = append(args, url)
+
+	for _, fw := range FORBIDDEN_WEBSITES {
+		if strings.Contains(url, fw) {
+			log.Printf("Skipping insertion for forbidden website: %s", url)
+			return fmt.Errorf("skipping insertion for forbidden website: %s", url)
+		}
+	}
+
 	if len(statusCodes) > 0 {
 		query = `INSERT INTO websites (url, status_code) VALUES ($1, $2) ON CONFLICT (url) DO NOTHING;`
 		args = append(args, statusCodes[0])
@@ -65,16 +72,23 @@ func InsertWebsite(db *sqlx.DB, url string, statusCodes ...int) error {
 	return err
 }
 
-func InsertEmbeddings(db *sqlx.DB, url string, embeddings []string, kind string) error {
+func InsertEmbeddings(db *sqlx.DB, url string, embeddings []float64, kind string) error {
+	// Build Postgres vector literal: [0.123,0.456,...]
+	elems := make([]string, len(embeddings))
+	for i, v := range embeddings {
+		elems[i] = fmt.Sprintf("%g", v)
+	}
+	vectorLiteral := "[" + strings.Join(elems, ",") + "]"
+
 	query := `
-	INSERT INTO websites_index (website, embedding, type)
-	VALUES ($1, $2, $3)
-	ON CONFLICT (website, type) DO UPDATE
-		SET embedding = EXCLUDED.embedding;
+		INSERT INTO websites_index (website, embedding, type)
+		VALUES ($1, $2::vector, $3)
+		ON CONFLICT (website, type) DO UPDATE
+		  SET embedding = EXCLUDED.embedding;
 	`
-	_, err := db.Exec(query, url, embeddings, kind)
+	_, err := db.Exec(query, url, vectorLiteral, kind)
 	return err
-} 
+}
 
 func UpdateWebsite(db *sqlx.DB, website Website) error {
 	query := `UPDATE websites SET is_scraped = $1, status_code = $2, title = $3, description = $4, raw_text = $5, scraped_at = $6, amount_of_buttons = $7
@@ -95,9 +109,14 @@ func DoesButtonExist(db *sqlx.DB, url string) (bool, error) {
 
 func RetrievePendingWebsites(db *sqlx.DB) ([]Website, error) {
 	var websites []Website
-	query := `SELECT * FROM websites WHERE is_scraped = false AND status_code IS NULL ORDER BY scraped_at ASC LIMIT 10;`
-	err := db.Select(&websites, query)
-	if err != nil {
+	query := `
+		SELECT id, url
+		FROM websites
+		WHERE (is_scraped = false OR status_code IS NULL)
+		  AND (status_code != 999 OR status_code IS NULL)
+		LIMIT 10;
+	`
+	if err := db.Select(&websites, query); err != nil {
 		log.Println("Error retrieving pending websites:", err)
 		return nil, err
 	}

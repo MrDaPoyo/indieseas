@@ -14,6 +14,45 @@ import (
 	"github.com/joho/godotenv"
 )
 
+var FORBIDDEN_WEBSITES = []string{
+	".google.com",
+	".facebook.com",
+	".twitter.com",
+	".instagram.com",
+	".linkedin.com",
+	".youtube.com",
+	".tiktok.com",
+	".pinterest.com",
+	".reddit.com",
+	".wikipedia.org",
+	".github.com",
+	".gitlab.com",
+	".bitbucket.org",
+	".stackoverflow.com",
+	".quora.com",
+	".amazon.com",
+	".ebay.com",
+	".newground.com",
+	".tumblr.com",
+	".yahoo.com",
+	".bing.com",
+	".yandex.com",
+	".baidu.com",
+	".vk.com",
+	".weibo.com",
+	".twitch.tv",
+	".discord.com",
+	".whatsapp.com",
+	".telegram.org",
+	".signal.org",
+	".slack.com",
+	".microsoft.com",
+	".apple.com",
+	".adobe.com",
+	".paypal.com",
+	".bsky.app",
+}
+
 type ScraperWorkerResponse struct {
 	RawText     string          `json:"rawText"`
 	Title       string          `json:"title"`
@@ -157,15 +196,19 @@ func ScrapeSinglePage(url string, baseURL string) (*ScraperWorkerResponse, strin
 	return &response, raw_text, found_buttons, found_links, internal_links, statusCode, nil
 }
 
+// normalizeURL removes any trailing slash so URLs are compared consistently
+func normalizeURL(u string) string {
+	return strings.TrimSuffix(u, "/")
+}
+
 func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, error) {
 	var (
 		pages []ScraperWorkerResponse
-		queue = []string{rootURL}
+		queue = []string{normalizeURL(rootURL)}
 		seen  = make(map[string]struct{})
 	)
 
 	robots, err := CheckRobotsTxt(rootURL)
-
 	if err != nil {
 		log.Printf("error checking robots.txt for %q: %v", rootURL, err)
 		return nil, fmt.Errorf("error checking robots.txt for %q: %w", rootURL, err)
@@ -173,78 +216,77 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 
 	if robots != nil {
 		for _, path := range robots.Disallowed {
-			disallowedURL := AppendLink(rootURL, path)
-
-			// enqueue it so we still “visit” it, but mark as disallowed
-			seen[disallowedURL] = struct{}{}
-			log.Println("Disallowed URL found:", disallowedURL)
-
-			// insert into DB with special status code 999
-			if err := InsertWebsite(db, disallowedURL, 999); err != nil {
-				log.Printf("error inserting disallowed URL %q with status 999: %v", disallowedURL, err)
+			disURL := normalizeURL(AppendLink(rootURL, path))
+			seen[disURL] = struct{}{}
+			log.Println("Disallowed URL found:", disURL)
+			if err := InsertWebsite(db, disURL, 999); err != nil {
+				log.Printf("error inserting disallowed URL %q with status 999: %v", disURL, err)
 			}
 		}
 	}
 
 	for len(queue) > 0 {
-		url := queue[0]
+		raw := queue[0]
 		queue = queue[1:]
+		url := normalizeURL(raw)
 		if _, ok := seen[url]; ok {
 			continue
 		}
 		seen[url] = struct{}{}
 
-		resp, raw_text, buttons, links, internalLinks, statusCode, err := ScrapeSinglePage(url, rootURL)
+		resp, rawText, buttons, links, internalLinks, statusCode, err := ScrapeSinglePage(url, rootURL)
 		if err != nil {
-			log.Printf("error scraping %q: %v", url, err)
 			continue
 		}
 		pages = append(pages, *resp)
 
-		// insert external links into DB
+		// external links
 		for _, link := range links {
-			link.Href = AppendLink(url, link.Href)
-			if err := InsertWebsite(db, link.Href); err != nil {
-				log.Printf("error inserting website %q: %v", link.Href, err)
+			href := normalizeURL(AppendLink(url, link.Href))
+			if err := InsertWebsite(db, href); err != nil {
+				log.Printf("error inserting website %q: %v", href, err)
 			}
 		}
 
-		// process buttons
+		// buttons
 		for _, btn := range buttons {
 			if _, err := ProcessButton(db, btn.Src, btn); err != nil {}
-			if to := btn.LinksTo; strings.HasPrefix(to, "http://") || strings.HasPrefix(to, "https://") {
+			to := normalizeURL(btn.LinksTo)
+			if strings.HasPrefix(to, "http://") || strings.HasPrefix(to, "https://") {
 				if err := InsertWebsite(db, to); err != nil {
 					log.Printf("error inserting website from button %q: %v", to, err)
 				}
 			}
 		}
 
-		// enqueue internal links for further scraping
+		// enqueue internal links
 		for _, l := range internalLinks {
-			next := AppendLink(url, l.Href)
+			next := normalizeURL(AppendLink(url, l.Href))
 			if _, ok := seen[next]; !ok {
 				queue = append(queue, next)
 			}
 		}
 
-		// insert vector embeddings into database
-		raw_text = strings.TrimSpace(raw_text)
+		// insert embeddings & metadata
+		rawText = strings.TrimSpace(rawText)
 		resp.Title = strings.TrimSpace(resp.Title)
 		resp.Description = strings.TrimSpace(resp.Description)
+
 		if len(resp.Title) > 500 {
-			resp.Title = resp.Title[:100] // truncate title to 100 characters if too long
+			resp.Title = resp.Title[:100]
 		}
 		if len(resp.Description) > 500 {
-			resp.Description = resp.Description[:500] // truncate description to 500 characters if too long
+			resp.Description = resp.Description[:500]
 		}
-		if raw_text != "" && statusCode >= 200 && statusCode < 300 && len(buttons) > 0 {
+
+		if rawText != "" && statusCode >= 200 && statusCode < 300 && len(buttons) > 0 {
 			if err := InsertWebsite(db, url, statusCode); err != nil {
 				log.Printf("error inserting website %q with status %d: %v", url, statusCode, err)
 			}
-			if len(raw_text) > 5000 {
-				raw_text = raw_text[:5000] //truncate to 5000 characters if too long
+			if len(rawText) > 5000 {
+				rawText = rawText[:5000]
 			}
-			if err := InsertEmbeddings(db, url, VectorizeText(raw_text), "body"); err != nil {
+			if err := InsertEmbeddings(db, url, VectorizeText(rawText), "body"); err != nil {
 				log.Printf("error inserting embeddings for %q: %v", url, err)
 			}
 			if resp.Title != "" {
@@ -257,23 +299,22 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 					log.Printf("error inserting description embeddings for %q: %v", url, err)
 				}
 			}
-			InsertWebsite(db, url, statusCode)
 			UpdateWebsite(db, Website{
-				URL:         url,
-				IsScraped:   true,
-				StatusCode:  statusCode,
-				Title:       strings.TrimSpace(resp.Title),
-				Description: strings.TrimSpace(resp.Description),
-				RawText:     raw_text,
-				ScrapedAt:   time.Now(),
+				URL:             url,
+				IsScraped:       true,
+				StatusCode:      statusCode,
+				Title:           resp.Title,
+				Description:     resp.Description,
+				RawText:         rawText,
+				ScrapedAt:       time.Now(),
 				AmountOfButtons: len(buttons),
 			})
 		}
 	}
 
 	log.Printf("Scraped %d pages from %s", len(seen), rootURL)
-	for url := range seen {
-		log.Println(url)
+	for u := range seen {
+		log.Println(u)
 	}
 	return pages, nil
 }

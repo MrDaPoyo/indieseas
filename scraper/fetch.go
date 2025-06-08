@@ -9,7 +9,6 @@ import (
 	"os"
 	"net/http"
 	"net/url"
-	"log"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
@@ -50,7 +49,6 @@ func FetchButton(url string) ([]byte, int) {
 
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" || (contentType != "image/png" && contentType != "image/jpeg" && contentType != "image/gif") {
-		fmt.Println("URL is not an image")
 		return nil, 0
 	}
 
@@ -84,7 +82,7 @@ func FetchButton(url string) ([]byte, int) {
 	}
 	return nil, 0
 }
-func VectorizeText(text string) []string {
+func VectorizeText(text string) []float64 {
 	// load environment
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
 		fmt.Printf("Error loading .env file: %v\n", err)
@@ -97,7 +95,6 @@ func VectorizeText(text string) []string {
 	}
 
 	jsonData := fmt.Sprintf(`{"text": "%s"}`, strings.ReplaceAll(text, `"`, `\"`))
-	log.Println("Vectorizing text:", jsonData)
 	resp, err := http.Post(apiURL, "application/json", strings.NewReader(jsonData))
 	if err != nil {
 		fmt.Printf("Error vectorizing text: %v\n", err)
@@ -118,12 +115,5 @@ func VectorizeText(text string) []string {
 		return nil
 	}
 	
-	if len(result.Vectors) > 0 {
-		embeddings := make([]string, len(result.Vectors[0]))
-		for i, v := range result.Vectors[0] {
-			embeddings[i] = fmt.Sprintf("%f", v)
-		}
-		return embeddings
-	}
-	return nil
+	return result.Vectors[0]
 }
