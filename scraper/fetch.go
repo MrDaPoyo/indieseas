@@ -31,6 +31,11 @@ func FetchScraperWorker(url string) (*http.Response, error) {
 	if err != nil {
 		panic(err)
 	}
+	
+	if resp.StatusCode == http.StatusTooManyRequests {
+		fmt.Fprintln(os.Stderr, "Error: received 429 Too Many Requests, exiting.")
+		os.Exit(1)
+	}
 
 	return resp, nil
 }
