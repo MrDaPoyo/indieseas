@@ -77,12 +77,9 @@ func ProcessButton(Db *sqlx.DB, url string, button ScraperButton) (*Button, erro
 		Alt:          button.Alt,
 		Content:      buttonContents,
 	}
-	var err = InsertButton(Db, ButtonData)
-	if err != nil {
-		log.Printf("Failed to insert button data into database: %v", err)
-	}
+	InsertButton(Db, ButtonData)
 
-	return &ButtonData, err
+	return &ButtonData, nil
 }
 
 func ScrapeSinglePage(url string, baseURL string) (*ScraperWorkerResponse, string, []ScraperButton, []ScraperLink, []ScraperLink, int, error) {
@@ -240,7 +237,7 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 		if len(resp.Description) > 500 {
 			resp.Description = resp.Description[:500] // truncate description to 500 characters if too long
 		}
-		if raw_text != "" {
+		if raw_text != "" && statusCode >= 200 && statusCode < 300 && len(buttons) > 0 {
 			if err := InsertWebsite(db, url, statusCode); err != nil {
 				log.Printf("error inserting website %q with status %d: %v", url, statusCode, err)
 			}
@@ -322,12 +319,35 @@ func main() {
 
 	log.Println("Schema setup complete.")
 
+	var website_queue, _ = RetrievePendingWebsites(db)
+
+	if os.Args != nil && len(os.Args) > 1 {
+		rootURL := os.Args[1]
+		log.Printf("Starting scrape for root URL: %s", rootURL)
+		if _, err := ScrapeEntireWebsite(db, rootURL); err != nil {
+			log.Printf("Error scraping root URL %s: %v", rootURL, err)
+			return
+		}
+		log.Printf("Successfully scraped root URL: %s", rootURL)
+		return
+	}
+
+	log.Printf("Retrieved %d pending websites to scrape.", len(website_queue))
+	for _, website := range website_queue {
+		log.Printf("Processing website: %s", website.URL)
+		if _, err := ScrapeEntireWebsite(db, website.URL); err != nil {
+			log.Printf("Error scraping website %s: %v", website.URL, err)
+		} else {
+			log.Printf("Successfully scraped website: %s", website.URL)
+		}
+	}
+
 	// log.Println(Declutter(response.RawText))
 	// log.Println(FetchButton("https://raw.githubusercontent.com/ThinLiquid/buttons/main/img/maxpixels.gif"))
 	// log.Println(ScrapeSinglePage("https://toastofthesewn.nekoweb.org/"))
 	// log.Println(NewColorAnalyzer().AnalyzeImage(FetchButton("https://raw.githubusercontent.com/ThinLiquid/buttons/main/img/maxpixels.gif")))
 	// ScrapeEntireWebsite(db, "https://illiterate.nekoweb.org/") // example of a website that disallows scraping
-	ScrapeEntireWebsite(db, "https://toastofthesewn.nekoweb.org/") // example of a website that allows scraping
+	// ScrapeEntireWebsite(db, "https://toastofthesewn.nekoweb.org/") // example of a website that allows scraping
 	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test", "/img/maxpixels.gif"))
 	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test/", "/img/maxpixels/"))
 	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test/", "img/maxpixels.gif"))
@@ -335,4 +355,6 @@ func main() {
 	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test", "https://poyoweb.org/index.html"))
 	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test/", "https://poyoweb.org/index.html/"))
 	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test.html/", "second.html"))
+	// InsertEmbeddings(db, "test_url", VectorizeText("This is a test sentence."), "test_kind") -- Successful!!1! :D
 }
+

@@ -5,9 +5,11 @@ import (
 	"strings"
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"net/http"
 	"net/url"
+	"log"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
@@ -63,7 +65,6 @@ func FetchButton(url string) ([]byte, int) {
 	height := bounds.Dy()
 
 	if width == 88 && height == 31 {
-		fmt.Println("Image is 88x31 pixels")
 		resp.Body.Close()
 		resp, err = http.Get(url)
 		if err != nil {
@@ -83,16 +84,32 @@ func FetchButton(url string) ([]byte, int) {
 	}
 	return nil, 0
 }
-
 func VectorizeText(text string) []string {
+	// load environment
+	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
+		fmt.Printf("Error loading .env file: %v\n", err)
+		return nil
+	}
+	apiURL := os.Getenv("AI_API_EMBEDDING_URL")
+	if apiURL == "" {
+		fmt.Println("AI_API_EMBEDDING_URL not set in environment")
+		return nil
+	}
+
 	jsonData := fmt.Sprintf(`{"text": "%s"}`, strings.ReplaceAll(text, `"`, `\"`))
-	resp, err := http.Post(os.Getenv("AI_API_EMBEDDING_URL"), "application/json", strings.NewReader(jsonData))
+	log.Println("Vectorizing text:", jsonData)
+	resp, err := http.Post(apiURL, "application/json", strings.NewReader(jsonData))
 	if err != nil {
 		fmt.Printf("Error vectorizing text: %v\n", err)
 		return nil
 	}
 	defer resp.Body.Close()
-	
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		fmt.Printf("Non-OK HTTP status: %s, body: %s\n", resp.Status, string(bodyBytes))
+		return nil
+	}
+
 	var result struct {
 		Vectors [][]float64 `json:"vectors"`
 	}

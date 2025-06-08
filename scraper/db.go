@@ -5,6 +5,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"time"
+	"log"
 )
 
 // Button represents a button entry in the database
@@ -38,6 +39,11 @@ func InsertButton(db *sqlx.DB, button Button) error {
 		button.ScrapedAt = "now()"
 	}
 	_, err := db.NamedExec(query, button)
+	if err == nil {
+		log.Println("Inserted button:", button.URL)
+	} else {
+		log.Println("Failed to insert button:", button.URL, "Error:", err)
+	}
 	return err
 }
 
@@ -85,4 +91,15 @@ func DoesButtonExist(db *sqlx.DB, url string) (bool, error) {
 		return false, err
 	}
 	return exists, nil
+}
+
+func RetrievePendingWebsites(db *sqlx.DB) ([]Website, error) {
+	var websites []Website
+	query := `SELECT * FROM websites WHERE is_scraped = false AND status_code IS NULL ORDER BY scraped_at ASC LIMIT 10;`
+	err := db.Select(&websites, query)
+	if err != nil {
+		log.Println("Error retrieving pending websites:", err)
+		return nil, err
+	}
+	return websites, nil
 }
