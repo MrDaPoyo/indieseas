@@ -35,6 +35,45 @@ type ScraperLink struct {
 
 var globalScrapedButtons = make(map[string]struct{})
 
+func AppendLink(baseURL string, href string) string {
+	if strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://") {
+		return href
+	}
+	
+	if strings.HasPrefix(href, "/") {
+		// Extract protocol and hostname from baseURL
+		if strings.HasPrefix(baseURL, "https://") {
+			hostname := strings.Split(baseURL[8:], "/")[0]
+			return "https://" + hostname + href
+		}
+		if strings.HasPrefix(baseURL, "http://") {
+			hostname := strings.Split(baseURL[7:], "/")[0]
+			return "http://" + hostname + href
+		}
+	} else {
+
+		if strings.HasSuffix(baseURL, "/") {
+			return baseURL + href
+		}
+		return baseURL + href
+	}
+	
+	
+	if strings.HasPrefix(href, "/") {
+		return baseURL + href
+	}
+	if strings.Contains(href, ".") && !strings.Contains(href, "/") {
+		if strings.HasSuffix(baseURL, "/") {
+			return baseURL + href
+		}
+		return baseURL + "/" + href
+	}
+	if strings.HasSuffix(baseURL, "/") {
+		return baseURL + href
+	}
+	return baseURL + "/" + href
+}
+
 func ProcessButton(Db *sqlx.DB, url string, button ScraperButton) (*Button, error) {
 	if exists, _ := DoesButtonExist(Db, url); exists {
 		log.Printf("Button already exists in database: %s", url)
@@ -360,5 +399,7 @@ func main() {
 	// log.Println(ScrapeSinglePage("https://toastofthesewn.nekoweb.org/"))
 	// log.Println(NewColorAnalyzer().AnalyzeImage(FetchButton("https://raw.githubusercontent.com/ThinLiquid/buttons/main/img/maxpixels.gif")))
 	// log.Println(ScrapeEntireWebsite("https://illiterate.nekoweb.org/")) // example of a website that disallows scraping
-	log.Println(ScrapeEntireWebsite(db, "https://toastofthesewn.nekoweb.org/")) // example of a website that allows scraping
+	// log.Println(ScrapeEntireWebsite(db, "https://toastofthesewn.nekoweb.org/")) // example of a website that allows scraping
+	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test", "/img/maxpixels.gif")) 
+	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test/", "img/maxpixels.gif"))
 }
