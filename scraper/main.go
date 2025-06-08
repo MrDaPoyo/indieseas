@@ -86,37 +86,27 @@ func isForbidden(url string) bool {
 }
 
 func AppendLink(baseURL, href string) string {
-	// strip off any fragment identifiers to prevent repeated “#/” loops
+	// strip off any fragment
 	if i := strings.Index(href, "#"); i != -1 {
 		href = href[:i]
 	}
-	// if href is now empty, just return the base URL (normalized)
-	if href == "" {
-		return strings.TrimSuffix(baseURL, "/") + "/"
-	}
 
-	// fully qualified URL
-	if strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://") {
+	// parse the base URL
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		// fallback to raw href
 		return strings.TrimSuffix(href, "/") + "/"
 	}
 
-	// absolute path on same host
-	if strings.HasPrefix(href, "/") {
-		var protoHost string
-		if idx := strings.Index(baseURL, "://"); idx != -1 {
-			rest := baseURL[idx+3:]
-			host := strings.Split(rest, "/")[0]
-			protoHost = baseURL[:idx+3] + host
-		} else {
-			protoHost = baseURL
-		}
-		return strings.TrimSuffix(protoHost, "/") + href
+	// ResolveReference will handle absolute URLs, absolute paths and relative paths
+	ref, err := base.Parse(href)
+	if err != nil {
+		return strings.TrimSuffix(href, "/") + "/"
 	}
 
-	// relative path
-	href = strings.TrimSuffix(href, "/")
-	base := strings.TrimSuffix(baseURL, "/")
-	return base + "/" + href
+	// ensure consistent trailing slash
+	out := ref.String()
+	return strings.TrimSuffix(out, "/") + "/"
 }
 
 func ProcessButton(Db *sqlx.DB, url string, button ScraperButton) (*Button, error) {
