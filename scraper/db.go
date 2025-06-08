@@ -56,7 +56,6 @@ func InsertWebsite(db *sqlx.DB, url string, statusCodes ...int) error {
 
 	for _, fw := range FORBIDDEN_WEBSITES {
 		if strings.Contains(url, fw) {
-			log.Printf("Skipping insertion for forbidden website: %s", url)
 			return fmt.Errorf("skipping insertion for forbidden website: %s", url)
 		}
 	}

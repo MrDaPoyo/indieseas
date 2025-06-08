@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"sync"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -51,6 +52,7 @@ var FORBIDDEN_WEBSITES = []string{
 	".adobe.com",
 	".paypal.com",
 	".bsky.app",
+	"://g.co",
 }
 
 type ScraperWorkerResponse struct {
@@ -99,7 +101,6 @@ func AppendLink(baseURL string, href string) string {
 
 func ProcessButton(Db *sqlx.DB, url string, button ScraperButton) (*Button, error) {
 	if exists, _ := DoesButtonExist(Db, url); exists {
-		log.Printf("Button already exists in database: %s", url)
 		return nil, fmt.Errorf("button already exists in database: %s", url)
 	}
 	var buttonContents, statusCode = FetchButton(url)
@@ -218,7 +219,6 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 		for _, path := range robots.Disallowed {
 			disURL := normalizeURL(AppendLink(rootURL, path))
 			seen[disURL] = struct{}{}
-			log.Println("Disallowed URL found:", disURL)
 			if err := InsertWebsite(db, disURL, 999); err != nil {
 				log.Printf("error inserting disallowed URL %q with status 999: %v", disURL, err)
 			}
@@ -226,6 +226,12 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 	}
 
 	for len(queue) > 0 {
+		// stop once we've scraped 75 pages
+		if len(pages) >= 75 {
+			log.Printf("Reached page limit (%d), stopping crawl.", 75)
+			break
+		}
+
 		raw := queue[0]
 		queue = queue[1:]
 		url := normalizeURL(raw)
@@ -243,9 +249,7 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 		// external links
 		for _, link := range links {
 			href := normalizeURL(AppendLink(url, link.Href))
-			if err := InsertWebsite(db, href); err != nil {
-				log.Printf("error inserting website %q: %v", href, err)
-			}
+			if err := InsertWebsite(db, href); err != nil {}
 		}
 
 		// buttons
@@ -261,6 +265,9 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 
 		// enqueue internal links
 		for _, l := range internalLinks {
+			if len(pages) >= 75 {
+				break
+			}
 			next := normalizeURL(AppendLink(url, l.Href))
 			if _, ok := seen[next]; !ok {
 				queue = append(queue, next)
@@ -374,14 +381,35 @@ func main() {
 	}
 
 	log.Printf("Retrieved %d pending websites to scrape.", len(website_queue))
-	for _, website := range website_queue {
-		log.Printf("Processing website: %s", website.URL)
-		if _, err := ScrapeEntireWebsite(db, website.URL); err != nil {
-			log.Printf("Error scraping website %s: %v", website.URL, err)
-		} else {
-			log.Printf("Successfully scraped website: %s", website.URL)
-		}
+
+	jobs := make(chan Website, len(website_queue))
+	var wg sync.WaitGroup
+	workerCount := 10
+
+	// start workers
+	for i := 1; i <= workerCount; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for website := range jobs {
+				log.Printf("Worker %d processing website: %s", id, website.URL)
+				if _, err := ScrapeEntireWebsite(db, website.URL); err != nil {
+					log.Printf("Error scraping website %s: %v", website.URL, err)
+				} else {
+					log.Printf("Successfully scraped website: %s", website.URL)
+				}
+			}
+		}(i)
 	}
+
+	// enqueue jobs
+	for _, website := range website_queue {
+		jobs <- website
+	}
+	close(jobs)
+
+	// wait for all workers to finish
+	wg.Wait()
 
 	// log.Println(Declutter(response.RawText))
 	// log.Println(FetchButton("https://raw.githubusercontent.com/ThinLiquid/buttons/main/img/maxpixels.gif"))
