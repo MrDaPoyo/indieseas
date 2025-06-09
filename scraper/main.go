@@ -248,7 +248,6 @@ func ScrapeSinglePage(url string, baseURL string) (*ScraperWorkerResponse, strin
         
         // Skip forbidden external links
         if !strings.HasPrefix(href, url) && isForbidden(normalizedHref) {
-            log.Printf("Skipping forbidden external link: %s", normalizedHref)
             continue
         }
 
