@@ -19,6 +19,9 @@ if (!response.ok) {
 const website = await response.json();
 const buttons = website.buttons || [];
 const formattedDate = new Date(website.scraped_at).toTimeString();
+console.log(
+    `Website fetched: ${website.title} (${website.url}) at ${formattedDate}, with ${buttons.length} buttons.`,
+);
 ---
 
 <div class="navbar">

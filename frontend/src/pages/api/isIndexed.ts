@@ -22,8 +22,8 @@ export const GET: APIRoute = async ({ url }) => {
             websiteUrl = `https://${websiteUrl}`;
         }
 
-        if (!websiteUrl.endsWith("/")) {
-            websiteUrl += "/";
+        if (websiteUrl.endsWith("/")) {
+            websiteUrl = websiteUrl.slice(0, -1);
         }
 
         const urlRegex = /^(https?:\/\/)?([\w.-]+)(:[0-9]+)?(\/.*)?$/;
