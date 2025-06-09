@@ -112,7 +112,7 @@ func RetrievePendingWebsites(db *sqlx.DB) ([]Website, error) {
 		SELECT id, url
 		FROM websites
 		WHERE (is_scraped = false OR status_code IS NULL)
-		  AND (status_code != 999 OR status_code IS NULL)
+		  AND (status_code != 999 AND status_code != 403 AND status_code != 404 OR status_code IS NULL)
 		LIMIT 10;
 	`
 	if err := db.Select(&websites, query); err != nil {
