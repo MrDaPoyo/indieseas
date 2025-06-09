@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"strings"
-	"time"
 	"sync"
-	"net/url"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -159,107 +159,108 @@ func ProcessButton(Db *sqlx.DB, url string, button ScraperButton) (*Button, erro
 	return &ButtonData, nil
 }
 
-func ScrapeSinglePage(url string, baseURL string) (*ScraperWorkerResponse, string, []ScraperButton, []ScraperLink, []ScraperLink, int, error) {
-    // First check if the target URL itself is forbidden
-    if isForbidden(url) {
-        return nil, "", nil, nil, nil, 403, fmt.Errorf("forbidden website: %s", url)
-    }
+func ScrapeSinglePage(db *sqlx.DB, url string, baseURL string) (*ScraperWorkerResponse, map[string]int, []ScraperButton, []ScraperLink, []ScraperLink, int, error) {
+	if isForbidden(url) {
+		return nil, nil, nil, nil, nil, 403, fmt.Errorf("forbidden website: %s", url)
+	}
 
-    resp, err := FetchScraperWorker(url)
+	resp, err := FetchScraperWorker(url)
 	if resp.StatusCode == 500 {
 		log.Printf("Website forbidden (403) for URL: %s", url)
-		return nil, "", nil, nil, nil, 403, fmt.Errorf("website forbidden (403) for URL: %s", url)
+		return nil, nil, nil, nil, nil, 403, fmt.Errorf("website forbidden (403) for URL: %s", url)
 	} else if resp.StatusCode == 404 {
 		log.Printf("Website not found (404) for URL: %s", url)
-		return nil, "", nil, nil, nil, 404, fmt.Errorf("website not found (404) for URL: %s", url)
+		return nil, nil, nil, nil, nil, 404, fmt.Errorf("website not found (404) for URL: %s", url)
 	}
-		
-    if err != nil {
-        return nil, "", nil, nil, nil, 0, fmt.Errorf("error fetching scraper worker: %w", err)
-    }
-    defer resp.Body.Close()
 
-    statusCode := resp.StatusCode
+	if err != nil {
+		return nil, nil, nil, nil, nil, 0, fmt.Errorf("error fetching scraper worker: %w", err)
+	}
+	defer resp.Body.Close()
 
-    var response ScraperWorkerResponse
-    if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-        return nil, "", nil, nil, nil, statusCode, fmt.Errorf("error decoding JSON response: %w", err)
-    }
+	statusCode := resp.StatusCode
 
-    var found_links []ScraperLink
-    var internal_links []ScraperLink
-    var found_buttons []ScraperButton
-    var raw_text = Declutter(response.RawText)
+	var response ScraperWorkerResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, nil, nil, nil, nil, statusCode, fmt.Errorf("error decoding JSON response: %w", err)
+	}
 
-    // prevent duplicates on this page
-    buttonSrcSet := make(map[string]struct{})
-    linkHrefSet := make(map[string]struct{})
+	var found_links []ScraperLink
+	var internal_links []ScraperLink
+	var found_buttons []ScraperButton
+	var keywords = Declutter(response.RawText)
 
-    for _, button := range response.Buttons {
-        src := button.Src
+	InsertKeywords(db, url, keywords)
 
-        if _, seenGlobally := globalScrapedButtons[src]; seenGlobally {
-            continue
-        }
+	// prevent duplicates on this page
+	buttonSrcSet := make(map[string]struct{})
+	linkHrefSet := make(map[string]struct{})
 
-        // For button sources, we still want to process them even if they're from forbidden domains
-        if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
-            if _, seen := buttonSrcSet[src]; !seen {
-                found_buttons = append(found_buttons, button)
-                buttonSrcSet[src] = struct{}{}
-                globalScrapedButtons[src] = struct{}{}
-            }
-            continue
-        }
+	for _, button := range response.Buttons {
+		src := button.Src
 
-        // For button links, check if they're forbidden
-        to := strings.TrimSpace(button.LinksTo)
-        if to != "" {
-            to = AppendLink(baseURL, to)
-            normalizedTo := normalizeURL(to)
-            
-            if strings.HasPrefix(to, "http://") || strings.HasPrefix(to, "https://") {
-                if isForbidden(normalizedTo) {
-                    log.Printf("Skipping forbidden button link: %s", normalizedTo)
-                    continue
-                }
-                
-                if _, seen := linkHrefSet[normalizedTo]; !seen {
-                    log.Printf("Found external link from button: %s -> %s", src, normalizedTo)
-                    found_links = append(found_links, ScraperLink{Href: normalizedTo, Text: button.Alt})
-                    linkHrefSet[normalizedTo] = struct{}{}
-                }
-            } else {
-                if _, seen := linkHrefSet[src]; !seen {
-                    internal_links = append(internal_links, ScraperLink{Href: AppendLink(url, src), Text: button.Alt})
-                    linkHrefSet[src] = struct{}{}
-                }
-            }
-        }
-    }
+		if _, seenGlobally := globalScrapedButtons[src]; seenGlobally {
+			continue
+		}
 
-    for _, link := range response.Links {
-        href := AppendLink(url, link.Href)
-        normalizedHref := normalizeURL(href)
-        
-        if _, seen := linkHrefSet[normalizedHref]; seen {
-            continue
-        }
-        
-        // Skip forbidden external links
-        if !strings.HasPrefix(href, url) && isForbidden(normalizedHref) {
-            continue
-        }
+		// For button sources, we still want to process them even if they're from forbidden domains
+		if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
+			if _, seen := buttonSrcSet[src]; !seen {
+				found_buttons = append(found_buttons, button)
+				buttonSrcSet[src] = struct{}{}
+				globalScrapedButtons[src] = struct{}{}
+			}
+			continue
+		}
 
-        if strings.HasPrefix(href, url) {
-            internal_links = append(internal_links, link)
-        } else {
-            found_links = append(found_links, link)
-        }
-        linkHrefSet[normalizedHref] = struct{}{}
-    }
+		// For button links, check if they're forbidden
+		to := strings.TrimSpace(button.LinksTo)
+		if to != "" {
+			to = AppendLink(baseURL, to)
+			normalizedTo := normalizeURL(to)
 
-    return &response, raw_text, found_buttons, found_links, internal_links, statusCode, nil
+			if strings.HasPrefix(to, "http://") || strings.HasPrefix(to, "https://") {
+				if isForbidden(normalizedTo) {
+					log.Printf("Skipping forbidden button link: %s", normalizedTo)
+					continue
+				}
+
+				if _, seen := linkHrefSet[normalizedTo]; !seen {
+					log.Printf("Found external link from button: %s -> %s", src, normalizedTo)
+					found_links = append(found_links, ScraperLink{Href: normalizedTo, Text: button.Alt})
+					linkHrefSet[normalizedTo] = struct{}{}
+				}
+			} else {
+				if _, seen := linkHrefSet[src]; !seen {
+					internal_links = append(internal_links, ScraperLink{Href: AppendLink(url, src), Text: button.Alt})
+					linkHrefSet[src] = struct{}{}
+				}
+			}
+		}
+	}
+
+	for _, link := range response.Links {
+		href := AppendLink(url, link.Href)
+		normalizedHref := normalizeURL(href)
+
+		if _, seen := linkHrefSet[normalizedHref]; seen {
+			continue
+		}
+
+		// Skip forbidden external links
+		if !strings.HasPrefix(href, url) && isForbidden(normalizedHref) {
+			continue
+		}
+
+		if strings.HasPrefix(href, url) {
+			internal_links = append(internal_links, link)
+		} else {
+			found_links = append(found_links, link)
+		}
+		linkHrefSet[normalizedHref] = struct{}{}
+	}
+
+	return &response, keywords, found_buttons, found_links, internal_links, statusCode, nil
 }
 
 func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, error) {
@@ -287,7 +288,7 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 	type pageInfo struct {
 		url        string
 		resp       *ScraperWorkerResponse
-		rawText    string
+		keywords   map[string]int
 		buttons    []ScraperButton
 		statusCode int
 	}
@@ -304,8 +305,7 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 
 		time.Sleep(500 * time.Millisecond)
 
-		resp, rawText, buttons, links, internalLinks, statusCode, err :=
-			ScrapeSinglePage(url, rootURL)
+		resp, keywords, buttons, links, internalLinks, statusCode, err := ScrapeSinglePage(db, url, rootURL)
 
 		if statusCode == 403 {
 			log.Printf("Forbidden (403) for URL %s, skipping", url)
@@ -329,7 +329,7 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 		}
 
 		pages = append(pages, *resp)
-		pageInfos = append(pageInfos, pageInfo{url, resp, rawText, buttons, statusCode})
+		pageInfos = append(pageInfos, pageInfo{url, resp, keywords, buttons, statusCode})
 
 		// enqueue/discover links under the same root; external ones go to DB
 		for _, link := range links {
@@ -372,7 +372,6 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 
 	// index & mark every scraped page
 	for _, info := range pageInfos {
-		rawText := strings.TrimSpace(info.rawText)
 		resp := info.resp
 
 		resp.Title = strings.TrimSpace(resp.Title)
@@ -383,19 +382,10 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 		if len(resp.Description) > 500 {
 			resp.Description = resp.Description[:500]
 		}
-		if len(rawText) > 5000 {
-			rawText = rawText[:5000]
-		}
 
 		InsertWebsite(db, info.url, info.statusCode)
-		if rawText != "" && info.statusCode >= 200 && info.statusCode < 300 {
-			InsertEmbeddings(db, info.url, VectorizeText(rawText), "body")
-			if resp.Title != "" {
-				InsertEmbeddings(db, info.url, VectorizeText(resp.Title), "title")
-			}
-			if resp.Description != "" {
-				InsertEmbeddings(db, info.url, VectorizeText(resp.Description), "description")
-			}
+		if len(info.keywords) > 0 && info.statusCode >= 200 && info.statusCode < 300 {
+			InsertKeywords(db, info.url, info.keywords)
 		}
 
 		UpdateWebsite(db, Website{
@@ -404,7 +394,6 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 			StatusCode:      info.statusCode,
 			Title:           resp.Title,
 			Description:     resp.Description,
-			RawText:         rawText,
 			ScrapedAt:       time.Now(),
 			AmountOfButtons: len(info.buttons),
 		})
@@ -481,7 +470,7 @@ func main() {
 			if len(website_queue) == 0 {
 				log.Println("No pending websites. Sleeping for 30 seconds.")
 				time.Sleep(30 * time.Second)
-				continue
+				os.Exit(0)
 			}
 
 			log.Printf("Processing %d pending websites", len(website_queue))
@@ -534,4 +523,3 @@ func main() {
 	// log.Println(AppendLink("https://toastofthesewn.nekoweb.org/test.html/", "second.html"))
 	// InsertEmbeddings(db, "test_url", VectorizeText("This is a test sentence."), "test_kind") -- Successful!!1! :D
 }
-

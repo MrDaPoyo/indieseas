@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-func Declutter(input string) string {
+func Declutter(input string) map[string]int {
 	text := strings.ToLower(input)
 	
 	urlPattern := regexp.MustCompile(`https?://[^\s]+|www\.[^\s]+|\S+\.\S+`)
@@ -33,15 +33,15 @@ func Declutter(input string) string {
 	
 	words := strings.Fields(text)
 	
-	var cleanWords []string
+	frequencies := make(map[string]int)
 	for _, word := range words {
 		word = strings.TrimSpace(word)
 		if len(word) > 2 && !containsBuzzword(stopWords, word) {
-			cleanWords = append(cleanWords, word)
+			frequencies[word]++
 		}
 	}
 	
-	return strings.Join(cleanWords, " ")
+	return frequencies
 }
 
 func containsBuzzword(slice []string, item string) bool {

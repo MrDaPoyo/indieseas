@@ -71,26 +71,47 @@ func InsertWebsite(db *sqlx.DB, url string, statusCodes ...int) error {
 	return err
 }
 
-func InsertEmbeddings(db *sqlx.DB, url string, embeddings []float64, kind string) error {
-	// Build Postgres vector literal: [0.123,0.456,...]
-	elems := make([]string, len(embeddings))
-	for i, v := range embeddings {
-		elems[i] = fmt.Sprintf("%g", v)
+func InsertKeywords(db *sqlx.DB, url string, keywords map[string]int) error {
+	if len(keywords) == 0 {
+		return nil
 	}
-	vectorLiteral := "[" + strings.Join(elems, ",") + "]"
 
-	query := `
-		INSERT INTO websites_index (website, embedding, type)
-		VALUES ($1, $2::vector, $3)
-		ON CONFLICT (website, type) DO UPDATE
-		  SET embedding = EXCLUDED.embedding;
-	`
-	_, err := db.Exec(query, url, vectorLiteral, kind)
-	return err
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for keyword, count := range keywords {
+		if strings.TrimSpace(keyword) == "" {
+			continue
+		}
+
+		var keywordID int
+		getKeywordQuery := `SELECT id FROM keywords WHERE word = $1;`
+		err = tx.Get(&keywordID, getKeywordQuery, strings.TrimSpace(keyword))
+		if err != nil {
+			// oh noooo, the keyword doesn't exist! JUST FUCKING INSERT IT AHDLSHFLhflwlefhkewlhawlkf
+			insertKeywordQuery := `INSERT INTO keywords (word) VALUES ($1) RETURNING id;`
+			err = tx.Get(&keywordID, insertKeywordQuery, strings.TrimSpace(keyword))
+			if err != nil {
+				return err
+			}
+		}
+
+		indexQuery := `INSERT INTO keyword_index (keyword_id, url, frequency) VALUES ($1, $2, $3) 
+					   ON CONFLICT (keyword_id, url) DO UPDATE SET frequency = keyword_index.frequency + $3;`
+		_, err = tx.Exec(indexQuery, keywordID, url, count)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }
 
 func UpdateWebsite(db *sqlx.DB, website Website) error {
-	query := `UPDATE websites SET is_scraped = $1, status_code = $2, title = $3, description = $4, raw_text = $5, scraped_at = $6, amount_of_buttons = $7
+	query := `UPDATE websites SET is_scraped = $1, status_code = $2, title = $3, description = $4 scraped_at = $5, amount_of_buttons = $6
 			  WHERE url = $8;`
 	_, err := db.Exec(query, website.IsScraped, website.StatusCode, website.Title, website.Description, website.RawText, website.ScrapedAt, website.AmountOfButtons, website.URL)
 	return err

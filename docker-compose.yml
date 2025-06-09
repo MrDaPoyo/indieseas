@@ -1,6 +1,6 @@
 services:
   db:
-    image: pgvector/pgvector:pg17
+    image: postgres:17
     volumes:
       - pgdata:/var/lib/postgresql/data # Mount a named volume 'pgdata' to persist data in the specified directory inside the container
     restart: always

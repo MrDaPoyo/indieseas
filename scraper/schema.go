@@ -38,23 +38,17 @@ func CreateSchema(db *sqlx.DB) error {
 			UNIQUE(button_id, website_id)
 		);`,
 
-		`CREATE EXTENSION IF NOT EXISTS vector;`,
-
-		`CREATE TABLE IF NOT EXISTS websites_index (
+		`CREATE TABLE IF NOT EXISTS keywords (
 			id SERIAL PRIMARY KEY,
-			website TEXT NOT NULL,
-			embedding vector(512) NOT NULL,
-			type TEXT NOT NULL,
-			UNIQUE (website, type)
+			word TEXT UNIQUE NOT NULL
 		);`,
 
-		`CREATE INDEX IF NOT EXISTS embeddingIndex ON websites_index USING hnsw (embedding vector_cosine_ops);`,
-
-		`CREATE TABLE IF NOT EXISTS robots (
-			id SERIAL PRIMARY KEY,
-			website_id INTEGER REFERENCES websites(id),
-			allowed BOOLEAN DEFAULT TRUE,
-			last_checked TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		`CREATE TABLE IF NOT EXISTS keyword_index (
+			keyword_id INTEGER NOT NULL,
+			url TEXT NOT NULL,
+			frequency INTEGER NOT NULL DEFAULT 1,
+			PRIMARY KEY (keyword_id, url),
+			FOREIGN KEY (keyword_id) REFERENCES keywords(id)
 		);`,
 	}
 
