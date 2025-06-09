@@ -111,13 +111,32 @@ func RetrievePendingWebsites(db *sqlx.DB) ([]Website, error) {
 	query := `
 		SELECT id, url
 		FROM websites
-		WHERE (is_scraped = false OR status_code IS NULL)
-		  AND (status_code != 999 AND status_code != 403 AND status_code != 404 OR status_code IS NULL)
-		LIMIT 10;
+		WHERE is_scraped = false OR status_code IS NULL
+		LIMIT 100;
 	`
 	if err := db.Select(&websites, query); err != nil {
 		log.Println("Error retrieving pending websites:", err)
 		return nil, err
 	}
 	return websites, nil
+}
+
+func RetrieveStats(db *sqlx.DB) {
+	var totalButtons, totalWebsites, pendingWebsites int
+	err := db.Get(&totalButtons, "SELECT COUNT(*) FROM buttons;")
+	if err != nil {
+		log.Println("Error retrieving total buttons:", err)
+		return
+	}
+	err = db.Get(&totalWebsites, "SELECT COUNT(*) FROM websites;")
+	if err != nil {
+		log.Println("Error retrieving total websites:", err)
+		return
+	}
+	err = db.Get(&pendingWebsites, "SELECT COUNT(*) FROM websites WHERE is_scraped = false AND status_code IS NULL;")
+	if err != nil {
+		log.Println("Error retrieving pending websites:", err)
+		return
+	}
+	log.Printf("Total Buttons: %d, Total Websites: %d, Websites in the queue: %d", totalButtons, totalWebsites, pendingWebsites)
 }

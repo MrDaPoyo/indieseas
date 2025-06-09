@@ -457,14 +457,19 @@ func main() {
 	log.Println("Schema setup complete.")
 
 	if len(os.Args) > 1 {
-		rootURL := os.Args[1]
-		log.Printf("Starting scrape for root URL: %s", rootURL)
-		if _, err := ScrapeEntireWebsite(db, rootURL); err != nil {
-			log.Printf("Error scraping root URL %s: %v", rootURL, err)
+		if os.Args[1] == "--status" {
+			log.Println("---- IndieSeas Scraper Stats ----")
+			RetrieveStats(db)
+		} else if strings.HasPrefix(os.Args[1], "http") {
+			rootURL := os.Args[1]
+			log.Printf("Starting scrape for root URL: %s", rootURL)
+			if _, err := ScrapeEntireWebsite(db, rootURL); err != nil {
+				log.Printf("Error scraping root URL %s: %v", rootURL, err)
+				return
+			}
+			log.Printf("Successfully scraped root URL: %s", rootURL)
 			return
 		}
-		log.Printf("Successfully scraped root URL: %s", rootURL)
-		return
 	} else {
 		for {
 			website_queue, err := RetrievePendingWebsites(db)
