@@ -166,6 +166,14 @@ func ScrapeSinglePage(url string, baseURL string) (*ScraperWorkerResponse, strin
     }
 
     resp, err := FetchScraperWorker(url)
+	if resp.StatusCode == 500 {
+		log.Printf("Website forbidden (403) for URL: %s", url)
+		return nil, "", nil, nil, nil, 403, fmt.Errorf("website forbidden (403) for URL: %s", url)
+	} else if resp.StatusCode == 404 {
+		log.Printf("Website not found (404) for URL: %s", url)
+		return nil, "", nil, nil, nil, 404, fmt.Errorf("website not found (404) for URL: %s", url)
+	}
+		
     if err != nil {
         return nil, "", nil, nil, nil, 0, fmt.Errorf("error fetching scraper worker: %w", err)
     }
@@ -299,7 +307,25 @@ func ScrapeEntireWebsite(db *sqlx.DB, rootURL string) ([]ScraperWorkerResponse, 
 
 		resp, rawText, buttons, links, internalLinks, statusCode, err :=
 			ScrapeSinglePage(url, rootURL)
+
+		if statusCode == 403 {
+			log.Printf("Forbidden (403) for URL %s, skipping", url)
+			InsertWebsite(db, url, 403)
+			continue
+		}
+		if statusCode == 404 {
+			log.Printf("Not Found (404) for URL %s, skipping", url)
+			InsertWebsite(db, url, 404)
+			continue
+		}
+
 		if err != nil {
+			log.Printf("Error scraping page %s (status: %d): %v", url, statusCode, err)
+			continue
+		}
+
+		if resp == nil {
+			log.Printf("Unexpected nil response for URL %s (status: %d) without error, skipping", url, statusCode)
 			continue
 		}
 
