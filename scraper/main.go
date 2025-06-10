@@ -54,6 +54,12 @@ var FORBIDDEN_WEBSITES = []string{
 	".paypal.com",
 	".bsky.app",
 	"://g.co",
+	"://goo.gl",
+	".bit.ly",
+	".tinyurl.com",
+	".ow.ly",
+	".t.co",
+	".archlinux.org",
 }
 
 type ScraperWorkerResponse struct {
