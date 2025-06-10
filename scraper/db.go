@@ -132,7 +132,7 @@ func RetrievePendingWebsites(db *sqlx.DB) ([]Website, error) {
 	query := `
 		SELECT id, url
 		FROM websites
-		WHERE is_scraped = false OR status_code IS NULL
+		WHERE (is_scraped = false AND status_code IS NULL) AND (LENGTH(url) - LENGTH(REPLACE(url, '/', ''))) = 2
 		LIMIT 100;
 	`
 	if err := db.Select(&websites, query); err != nil {
