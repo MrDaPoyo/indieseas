@@ -3,7 +3,6 @@ package main
 import (
 	"regexp"
 	"strings"
-	"log"
 
 	"github.com/reiver/go-porterstemmer"
 )
