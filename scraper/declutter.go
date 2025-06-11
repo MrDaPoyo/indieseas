@@ -3,6 +3,9 @@ package main
 import (
 	"regexp"
 	"strings"
+	"log"
+
+	"github.com/reiver/go-porterstemmer"
 )
 
 func Declutter(input string) map[string]int {
@@ -36,7 +39,10 @@ func Declutter(input string) map[string]int {
 	frequencies := make(map[string]int)
 	for _, word := range words {
 		word = strings.TrimSpace(word)
-		if len(word) > 2 && !containsBuzzword(stopWords, word) {
+		if len(word) > 3 && !containsBuzzword(stopWords, word) {
+			word = RootOfWord(word)
+			word = strings.Trim(word, ".,!?;:\"'()[]{}<>")
+			word = strings.TrimSpace(word)
 			frequencies[word]++
 		}
 	}
@@ -51,4 +57,11 @@ func containsBuzzword(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+func RootOfWord(word string) string {
+	word = strings.ToLower(word)
+
+	stemmed := porterstemmer.StemString(word)
+	return stemmed
 }

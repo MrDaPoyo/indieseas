@@ -2,6 +2,16 @@ import type { APIRoute } from "astro";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { sql } from "drizzle-orm";
+import { stemmer } from 'stemmer';
+
+function stemSentence(sentence: string): string[] {
+	return sentence
+		.toLowerCase()
+		.replace(/[^a-z0-9\s]/g, '') // remove punctuation
+		.split(/\s+/)                // split into words
+		.filter(word => word.length > 2)
+		.map(word => stemmer(word));
+}
 
 export const GET: APIRoute = async (request) => {
 	try {
@@ -13,84 +23,69 @@ export const GET: APIRoute = async (request) => {
 
 		if (!query || query.trim() === "") {
 			return new Response(
-				JSON.stringify({ error: "Missing query parameter" }),
-				{
-					status: 400,
-					headers: { "Content-Type": "application/json" },
-				}
 			);
 		}
 
-		const aiUrl = import.meta.env.AI_URL || "http://localhost:8888";
-		if (!aiUrl) {
-			throw new Error("AI_URL environment variable not set");
+		const keywords = stemSentence(query);
+		console.log("Stemmed keywords:", keywords);
+
+		if (keywords.length === 0) {
+			console.log("No valid keywords found after stemming for query:", query);
+			return new Response(JSON.stringify({
+				results: [],
+				metadata: {
+					originalDbCount: 0,
+					finalCount: 0,
+					time: performance.now() - timer,
+					message: "No searchable keywords found in your query."
+				},
+				time: performance.now() - timer
+			}), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			});
 		}
 
-		const aiResponse = await fetch(`${aiUrl}/vectorize`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ text: query })
-		});
+		const keywordSql = keywords.map((keyword) =>
+			sql`LOWER(${keyword})`
+		);
+		const keywordRows = keywords.map((kw) =>
+			sql`
+				SELECT
+					w.id,
+					w.url,
+					w.title,
+					w.raw_text   AS content,
+					ki.frequency
+				FROM websites w
+				JOIN keyword_index ki
+					ON ki.url = w.url
+				JOIN keywords k
+					ON k.id = ki.keyword_id
+				WHERE k.word = ${kw}
+			`
+		);
 
-		if (!aiResponse.ok) {
-			throw new Error("Failed to get vector from AI service");
-		}
-
-		const vectorData = await aiResponse.json();
-		const vectors = vectorData.vectors?.[0];
-
-		if (!Array.isArray(vectors)) {
-			throw new Error("Invalid vector response from AI service");
-		}
-
-		const vectorString = `[${vectors.join(",")}]`;
-
-		const rows = await db.execute(sql`
-			WITH nearest_matches AS (
-				SELECT id, website, type, embedding <=> ${vectorString}::vector AS distance
-				FROM websites_index
-				ORDER BY distance ASC
-				LIMIT 1000
-			),
-			similarity_scores AS (
-				SELECT website, type, 1 - distance AS similarity,
-					CASE type
-						WHEN 'title' THEN (1 - distance) * 2.0
-						WHEN 'description' THEN (1 - distance) * 1.5
-						WHEN 'corpus' THEN (1 - distance) * 1.0
-						ELSE (1 - distance)
-					END AS weighted_similarity
-				FROM nearest_matches
-			),
-			aggregated_scores AS (
-				SELECT website, SUM(weighted_similarity) as total_similarity,
-					COUNT(DISTINCT type) as matched_types_count,
-					ARRAY_AGG(DISTINCT type) as matched_types_list
-				FROM similarity_scores
-				GROUP BY website
-			)
-			SELECT ag.website, ag.total_similarity, ag.matched_types_count, 
-				   ag.matched_types_list, w.title, w.description, 
-				   w.amount_of_buttons, w.id, w.status_code, w.is_scraped, w.scraped_at
-			FROM aggregated_scores ag
-			JOIN websites w ON ag.website = w.url
-			WHERE ag.total_similarity >= 0.3 AND w.is_scraped = true
-			ORDER BY ag.total_similarity DESC
-			LIMIT 50
+		const results = await db.execute(sql`
+			SELECT
+				w.id,
+				w.url,
+				w.title,
+				w.description,
+				ki.frequency
+			FROM websites w
+			JOIN keyword_index ki
+				ON ki.url = w.url
+			JOIN keywords k
+				ON k.id = ki.keyword_id
+			WHERE k.word IN (${sql.join(keywordSql, sql`, `)})
+			ORDER BY ki.frequency DESC
+			LIMIT 150
 		`);
 
-		const results = rows.map(row => ({
-			website: row.website,
-			title: row.title,
-			description: row.description,
-			amount_of_buttons: row.amount_of_buttons,
-			score: row.total_similarity,
-			matched_types_count: row.matched_types_count,
-			website_id: row.id,
-			status_code: row.status_code,
-			is_scraped: row.is_scraped,
-			scraped_at: row.scraped_at
-		}));
+		console.log("Search results:", results);
+
+		const rows = results as { id: string, url: string, title: string, content: string, frequency: number }[];
 
 		return new Response(JSON.stringify({
 			results,

@@ -14,7 +14,6 @@ func CreateSchema(db *sqlx.DB) error {
 			status_code INTEGER,
 			title TEXT,
 			description TEXT,
-			raw_text TEXT,
 			scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			amount_of_buttons INTEGER DEFAULT 0
 		);`,
