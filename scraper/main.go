@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -171,16 +172,19 @@ func ScrapeSinglePage(db *sqlx.DB, url string, baseURL string) (*ScraperWorkerRe
 	}
 
 	resp, err := FetchScraperWorker(url)
+	if err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return nil, nil, nil, nil, nil, 408, fmt.Errorf("timeout: %w", err)
+		}
+		return nil, nil, nil, nil, nil, 0, fmt.Errorf("error fetching scraper worker: %w", err)
+	}
+
 	if resp.StatusCode == 500 {
 		log.Printf("Website forbidden (403) for URL: %s", url)
 		return nil, nil, nil, nil, nil, 403, fmt.Errorf("website forbidden (403) for URL: %s", url)
 	} else if resp.StatusCode == 404 {
 		log.Printf("Website not found (404) for URL: %s", url)
 		return nil, nil, nil, nil, nil, 404, fmt.Errorf("website not found (404) for URL: %s", url)
-	}
-
-	if err != nil {
-		return nil, nil, nil, nil, nil, 0, fmt.Errorf("error fetching scraper worker: %w", err)
 	}
 	defer resp.Body.Close()
 
