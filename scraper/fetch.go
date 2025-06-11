@@ -50,6 +50,9 @@ func FetchButton(url string) ([]byte, int) {
 		fmt.Printf("Error fetching URL: %v\n", err)
 		return nil, 0
 	}
+	if resp.StatusCode == http.StatusRequestTimeout {
+		return nil, http.StatusRequestTimeout
+	}
 	defer resp.Body.Close()
 
 	contentType := resp.Header.Get("Content-Type")
