@@ -49,22 +49,6 @@ export const GET: APIRoute = async (request) => {
 		const keywordSql = keywords.map((keyword) =>
 			sql`LOWER(${keyword})`
 		);
-		const keywordRows = keywords.map((kw) =>
-			sql`
-				SELECT
-					w.id,
-					w.url,
-					w.title,
-					w.raw_text   AS content,
-					ki.frequency
-				FROM websites w
-				JOIN keyword_index ki
-					ON ki.url = w.url
-				JOIN keywords k
-					ON k.id = ki.keyword_id
-				WHERE k.word = ${kw}
-			`
-		);
 
 		const results = await db.execute(sql`
 			SELECT
@@ -78,19 +62,18 @@ export const GET: APIRoute = async (request) => {
 				ON ki.url = w.url
 			JOIN keywords k
 				ON k.id = ki.keyword_id
-			WHERE k.word IN (${sql.join(keywordSql, sql`, `)})
+			WHERE ${sql.join(
+				keywords.map((kw) => sql`k.word ILIKE ${`%${kw}%`}`),
+				sql` OR `
+			)}
 			ORDER BY ki.frequency DESC
 			LIMIT 150
 		`);
 
-		console.log("Search results:", results);
-
-		const rows = results as { id: string, url: string, title: string, content: string, frequency: number }[];
-
 		return new Response(JSON.stringify({
 			results,
 			metadata: {
-				originalDbCount: rows.length,
+				originalDbCount: results.length,
 				finalCount: results.length,
 				time: performance.now() - timer
 			},
