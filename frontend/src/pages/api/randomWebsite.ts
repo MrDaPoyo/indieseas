@@ -18,9 +18,7 @@ export const GET: APIRoute = async (request) => {
             'status_code', b.status_code,
             'color_tag', b.color_tag,
             'color_average', b.color_average,
-            'alt', b.alt,
-            'title', b.title,
-            'links_to_url', br.links_to_url
+            'alt', b.alt
             )
             ) FILTER (WHERE b.id IS NOT NULL) as buttons
             FROM websites w
@@ -50,6 +48,7 @@ export const GET: APIRoute = async (request) => {
             },
         });
     } catch (err) {
+        console.error("Database query failed:", err);
         return new Response(
             JSON.stringify({
                 error: "Failed to fetch from database",
