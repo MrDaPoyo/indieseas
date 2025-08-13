@@ -11,6 +11,7 @@ indiescraper/target
 indiescraper/.env
 api/target
 api/.env
+analytics/ip_database.mmdb
 
 # output
 out

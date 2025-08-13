@@ -1,1 +1,0 @@
-I'll show you a series of Website screenshots, I want you to classify them in two categories: Indie, and corporate. with indie I mean personal websites
