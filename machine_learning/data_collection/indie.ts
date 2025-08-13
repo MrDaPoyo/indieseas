@@ -39,8 +39,9 @@ async function scrapeWebsites() {
 				},
 			});
 
-			// Process the response through HTMLRewriter
 			await rewriter.transform(response).text();
+
+			await new Promise<void>((resolve) => setTimeout(resolve, 1000));
 		} catch (error) {
 			console.error(`Error while scraping ${site}:`, error);
 		}
@@ -89,6 +90,7 @@ scrapeWebsites()
 				new URL(`https://${url}`).href
 			).toString("base64")}.jpg`;
 			fs.createWriteStream(outputFileName).write(buffer);
+			await new Promise<void>((resolve) => setTimeout(resolve, 1000));
 		}
 
 		console.log("URLs have been written to nekoweb-urls.json");
