@@ -18,24 +18,70 @@ import (
 
 var fetchedImages = make(map[string]struct{})
 
-func scrapeSinglePath(path string) {
+func isIgnoredLink(s string) bool {
+	ls := strings.ToLower(strings.TrimSpace(s))
+	prohibitedPrefixes := []string{
+		"//cdn.",
+		"//dash.",
+		"//static.",
+		"//assets.",
+		"//images.",
+	}
+	for _, prefix := range prohibitedPrefixes {
+		if strings.HasPrefix(ls, prefix) {
+			return true
+		}
+	}
+
+	prohibitedWebsites := []string{
+		"example.com",
+		"test.com",
+		"google.com",
+		"bsky.app",
+		"ze.wtf",
+		"youtu.be",
+		"youtube.com",
+		"soundcloud.com",
+		"bandlab.com",
+		"x.com",
+		"twitter.com",
+		"reddit.com",
+		"instagram.com",
+		"pinterest.com",
+		"tiktok.com",
+		"linkedin.com",
+		"flickr.com",
+		"vimeo.com",
+		"imgur.com",
+		"catbox.moe",
+	}
+	for _, website := range prohibitedWebsites {
+		if strings.Contains(ls, website) {
+			return true
+		}
+	}
+	
+	return strings.Contains(ls, "cdn-cgi")
+}
+
+func scrapeSinglePath(path string) (sameHostLinks []string) {
 	resp, err := http.Get(path)
 	if err != nil {
 		fmt.Printf("Error fetching %s: %v\n", path, err)
-		return
+		return nil
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		fmt.Printf("Failed to fetch %s: %s\n", path, resp.Status)
-		return
+		return nil
 	}
 
 	doc, err := html.Parse(resp.Body)
 	if err != nil {
 		fmt.Printf("Error parsing HTML from %s: %v\n", path, err)
-		return
+		return nil
 	}
 
 	var totalLinks []*html.Node
@@ -116,13 +162,16 @@ func scrapeSinglePath(path string) {
 			}
 		}
 
-		if raw == "" || !isValidURL(raw) {
+		if raw == "" || !isValidURL(raw) || isIgnoredLink(raw) {
 			continue
 		}
 
 		norm, ok := normalizeImageURL(baseURL, raw)
 		if !ok {
 			fmt.Printf("Skipping image (invalid URL): %q\n", raw)
+			continue
+		}
+		if isIgnoredLink(norm) {
 			continue
 		}
 
@@ -145,10 +194,10 @@ func scrapeSinglePath(path string) {
 		}
 
 		linksTo := ""
-		if anchorHref != "" {
+		if anchorHref != "" && !isIgnoredLink(anchorHref) {
 			if ah, err := url.Parse(anchorHref); err == nil {
 				abs := baseURL.ResolveReference(ah)
-				if abs.Host != "" && !strings.EqualFold(abs.Host, baseURL.Host) {
+				if !isIgnoredLink(abs.String()) && abs.Host != "" && !strings.EqualFold(abs.Host, baseURL.Host) {
 					linksTo = abs.String()
 				}
 			}
@@ -185,9 +234,49 @@ func scrapeSinglePath(path string) {
 	}
 
 	upsertButtons(foundButtons)
+
+	// Collect same-host links for crawling
+	baseHost := strings.ToLower(resp.Request.URL.Hostname())
+	seenLinks := make(map[string]struct{})
+	for _, a := range totalLinks {
+		for _, attr := range a.Attr {
+			if attr.Key != "href" {
+				continue
+			}
+			if isIgnoredLink(attr.Val) {
+				continue
+			}
+			norm, ok := normalizePageURL(resp.Request.URL, attr.Val)
+			if !ok {
+				continue
+			}
+			if isIgnoredLink(norm) {
+				continue
+			}
+			u, err := url.Parse(norm)
+			if err != nil {
+				continue
+			}
+			if strings.ToLower(u.Hostname()) != baseHost {
+				continue
+			}
+			if _, dup := seenLinks[norm]; dup {
+				continue
+			}
+			seenLinks[norm] = struct{}{}
+			sameHostLinks = append(sameHostLinks, norm)
+		}
+	}
+
+	return sameHostLinks
 }
 
 func downloadImage(imgUrl string) []byte {
+	if isIgnoredLink(imgUrl) {
+		fmt.Printf("Skipping download (ignored URL): %q\n", imgUrl)
+		return nil
+	}
+
 	u, err := url.Parse(imgUrl)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		fmt.Printf("Skipping download (invalid URL): %q\n", imgUrl)
@@ -235,11 +324,78 @@ func verifyImageSize(imageData []byte) bool {
 	if err != nil {
 		return false
 	}
-
 	if cfg.Width == 88 && cfg.Height == 31 {
 		fmt.Printf("88x31 Button Found! :D\n")
 		return true
 	}
 
 	return false
+}
+
+func CrawlSite(startURL string, maxPages int, delay time.Duration) {
+	if maxPages <= 0 {
+		maxPages = 50
+	}
+	if delay <= 0 {
+		delay = time.Second
+	}
+
+	start, err := url.Parse(startURL)
+	if err != nil || start.Scheme == "" || start.Host == "" {
+		fmt.Printf("Invalid start URL: %s\n", startURL)
+		return
+	}
+
+	baseHost := strings.ToLower(start.Hostname())
+	queue := []string{start.String()}
+	visited := make(map[string]struct{})
+	var fetchedPages []string
+
+	pagesCrawled := 0
+	for len(queue) > 0 && pagesCrawled < maxPages {
+		current := queue[0]
+		queue = queue[1:]
+		if _, seen := visited[current]; seen {
+			continue
+		}
+		visited[current] = struct{}{}
+
+		fmt.Printf("Crawling (%d/%d): %s\n", pagesCrawled+1, maxPages, current)
+		links := scrapeSinglePath(current)
+		pagesCrawled++
+		fetchedPages = append(fetchedPages, current)
+
+		for _, l := range links {
+			u, err := url.Parse(l)
+			if err != nil {
+				continue
+			}
+			if strings.ToLower(u.Hostname()) != baseHost {
+				continue
+			}
+			if _, seen := visited[l]; seen {
+				continue
+			}
+
+			duplicate := false
+			for _, q := range queue {
+				if q == l {
+					duplicate = true
+					break
+				}
+			}
+			if !duplicate {
+				queue = append(queue, l)
+			}
+		}
+
+		if len(queue) > 0 && pagesCrawled < maxPages {
+			time.Sleep(delay)
+		}
+	}
+	
+	for _, link := range fetchedPages {
+		fmt.Printf("Visited: %s\n", link)
+	}
+	fmt.Printf("Crawl finished. Pages crawled: %d (cap %d).\n", pagesCrawled, maxPages)
 }

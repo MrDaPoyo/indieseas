@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/jimsmart/grobotstxt"
 )
@@ -87,7 +88,8 @@ func main() {
 		fmt.Println("----------")
 
 		if startingPoint != "" {
-			scrapeSinglePath(fmt.Sprintf("%s%s", startingUrl, startingPoint))
+			start := fmt.Sprintf("%s%s", startingUrl, startingPoint)
+			CrawlSite(start, 50, time.Second)
 		}
 	}
 }
