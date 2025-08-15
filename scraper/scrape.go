@@ -237,7 +237,7 @@ func verifyImageSize(imageData []byte) bool {
 	}
 
 	if cfg.Width == 88 && cfg.Height == 31 {
-		fmt.Printf("Image matches size 88x31\n")
+		fmt.Printf("88x31 Button Found! :D\n")
 		return true
 	}
 
