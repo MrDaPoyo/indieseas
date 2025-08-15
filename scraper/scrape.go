@@ -11,16 +11,20 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"golang.org/x/net/html"
 )
 
-func scrapeSinglePath(path string, fetchedImages []string) {
+var fetchedImages = make(map[string]struct{})
+
+func scrapeSinglePath(path string) {
 	resp, err := http.Get(path)
 	if err != nil {
 		fmt.Printf("Error fetching %s: %v\n", path, err)
 		return
 	}
+
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -34,18 +38,18 @@ func scrapeSinglePath(path string, fetchedImages []string) {
 		return
 	}
 
-	var totalLinks []html.Node
-	var totalLinksWithImages []html.Node
-	var totalImages []html.Node
-
+	var totalLinks []*html.Node
+	var totalLinksWithImages []*html.Node
+	var totalImages []*html.Node
 	var processLinksImages func(*html.Node)
+
 	processLinksImages = func(n *html.Node) {
 		if n.Type == html.ElementNode {
 			switch n.Data {
 			case "a":
 				for _, attr := range n.Attr {
 					if attr.Key == "href" {
-						totalLinks = append(totalLinks, *n)
+						totalLinks = append(totalLinks, n)
 						fmt.Printf("Found link: %s\n", attr.Val)
 					}
 					if attr.Key == "href" {
@@ -62,7 +66,7 @@ func scrapeSinglePath(path string, fetchedImages []string) {
 							return false
 						}
 						if containsImage(n) {
-							totalLinksWithImages = append(totalLinksWithImages, *n)
+							totalLinksWithImages = append(totalLinksWithImages, n)
 							fmt.Println("Found image inside a link")
 						}
 					}
@@ -70,7 +74,7 @@ func scrapeSinglePath(path string, fetchedImages []string) {
 			case "img":
 				for _, attr := range n.Attr {
 					if attr.Key == "src" || attr.Key == "data-src" {
-						totalImages = append(totalImages, *n)
+						totalImages = append(totalImages, n)
 						fmt.Printf("Found image: %s\n", attr.Val)
 					}
 				}
@@ -84,64 +88,130 @@ func scrapeSinglePath(path string, fetchedImages []string) {
 	processLinksImages(doc)
 
 	fmt.Println("----------")
-
 	fmt.Printf("Total links found: %d\n", len(totalLinks))
 	fmt.Printf("Total links with images found: %d\n", len(totalLinksWithImages))
 	fmt.Printf("Total images found: %d\n", len(totalImages))
-
 	fmt.Println("----------")
 
-	var foundButtons [][]byte
+	var foundButtons []Button
+	baseURL := resp.Request.URL
+	seen := make(map[string]struct{})
 
 	for _, img := range totalImages {
+		raw := ""
 		for _, attr := range img.Attr {
-			if attr.Key == "src" || attr.Key == "data-src" {
-				parsedUrl, err := url.Parse(attr.Val)
-				if err != nil {
-					continue
+			key := strings.ToLower(attr.Key)
+			val := strings.TrimSpace(attr.Val)
+			if val == "" {
+				continue
+			}
+			if key == "src" && raw == "" {
+				raw = val
+			} else if key == "data-src" && raw == "" {
+				raw = val
+			} else if key == "srcset" && raw == "" {
+				if first := pickFromSrcset(val); first != "" {
+					raw = first
 				}
+			}
+		}
 
-				normalizedUrl := parsedUrl.String()
+		if raw == "" || !isValidURL(raw) {
+			continue
+		}
 
-				alreadyFetched := false
-				for _, fetched := range fetchedImages {
-					if fetched == normalizedUrl {
-						alreadyFetched = true
+		norm, ok := normalizeImageURL(baseURL, raw)
+		if !ok {
+			fmt.Printf("Skipping image (invalid URL): %q\n", raw)
+			continue
+		}
+
+		if _, exists := seen[norm]; exists {
+			continue
+		}
+		seen[norm] = struct{}{}
+
+		anchorHref := ""
+		for p := img.Parent; p != nil; p = p.Parent {
+			if p.Type == html.ElementNode && p.Data == "a" {
+				for _, aAttr := range p.Attr {
+					if aAttr.Key == "href" {
+						anchorHref = strings.TrimSpace(aAttr.Val)
 						break
 					}
 				}
-				if alreadyFetched {
-					continue // skip if already fetched
-				}
-
-				attr.Val = normalizedUrl
-			}
-			
-			if strings.HasPrefix(attr.Val, "/") {
-				base, err := url.Parse(path)
-				if err != nil {
-					fmt.Printf("Error parsing base URL %s: %v\n", path, err)
-					continue
-				}
-				u := base.ResolveReference(&url.URL{Path: attr.Val})
-				attr.Val = u.String()
-			}
-			imageData := downloadImage(attr.Val)
-			if verifyImageSize(imageData) {
-				foundButtons = append(foundButtons, imageData)
+				break
 			}
 		}
+
+		linksTo := ""
+		if anchorHref != "" {
+			if ah, err := url.Parse(anchorHref); err == nil {
+				abs := baseURL.ResolveReference(ah)
+				if abs.Host != "" && !strings.EqualFold(abs.Host, baseURL.Host) {
+					linksTo = abs.String()
+				}
+			}
+		}
+
+		if hasImageBeenScrapedBefore(norm) {
+			foundButtons = append(foundButtons, Button{
+				Link:    norm,
+				LinksTo: linksTo,
+			})
+			continue
+		}
+
+		if _, exists := fetchedImages[norm]; exists {
+			foundButtons = append(foundButtons, Button{
+				Link:    norm,
+				LinksTo: linksTo,
+			})
+			continue
+		}
+
+		fetchedImages[norm] = struct{}{}
+		imageData := downloadImage(norm)
+		if verifyImageSize(imageData) {
+			btn := Button{
+				Value: imageData,
+				Link:  norm,
+			}
+			if linksTo != "" {
+				btn.LinksTo = linksTo
+			}
+			foundButtons = append(foundButtons, btn)
+		}
 	}
+
+	upsertButtons(foundButtons)
 }
 
 func downloadImage(imgUrl string) []byte {
-	resp, err := http.Get(imgUrl)
+	u, err := url.Parse(imgUrl)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		fmt.Printf("Skipping download (invalid URL): %q\n", imgUrl)
+		return nil
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequest("GET", imgUrl, nil)
+	if err != nil {
+		fmt.Printf("Error creating request for image %s: %v\n", imgUrl, err)
+		return nil
+	}
+
+	req.Header.Set("User-Agent", "indieseas")
+	resp, err := client.Do(req)
+
+	markImageAsScraped(imgUrl)
+
 	if err != nil {
 		fmt.Printf("Error downloading image %s: %v\n", imgUrl, err)
 		return nil
 	}
-	defer resp.Body.Close()
 
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		fmt.Printf("Failed to download image %s: %s\n", imgUrl, resp.Status)
 		return nil
@@ -163,12 +233,13 @@ func verifyImageSize(imageData []byte) bool {
 
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(imageData))
 	if err != nil {
-		fmt.Printf("Error decoding image: %v\n", err)
 		return false
 	}
 
 	if cfg.Width == 88 && cfg.Height == 31 {
+		fmt.Printf("Image matches size 88x31\n")
 		return true
 	}
+
 	return false
 }

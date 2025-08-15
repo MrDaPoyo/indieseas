@@ -11,7 +11,7 @@ indiescraper/target
 indiescraper/.env
 api/target
 api/.env
-analytics/ip_database.mmdb
+scraper/docker-compose.yml
 
 # output
 out

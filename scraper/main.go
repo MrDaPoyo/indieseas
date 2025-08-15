@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/jimsmart/grobotstxt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+
+	"github.com/jimsmart/grobotstxt"
 )
 
 const (
@@ -51,37 +52,42 @@ func fetchRobotsTxt(Url string) (string, error) {
 }
 
 func main() {
-	startingUrl := "https://thinliquid.dev"
-	robotsData, err := fetchRobotsTxt(startingUrl)
+	initDB()
 
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error fetching robots.txt: %v\n", err)
-		os.Exit(1)
-	}
+	var startingUrl string = "https://thinliquid.dev"
 
-	fmt.Printf("Robots.txt for %s:\n", startingUrl)
-	fmt.Println(robotsData)
+	if startingUrl != "" {
+		robotsData, err := fetchRobotsTxt(startingUrl)
 
-	fmt.Println("----------")
-
-	var startingPoint = "/"
-	ok := grobotstxt.AgentAllowed(robotsData, USER_AGENT, startingPoint)
-	if ok {
-		fmt.Println("Access to / is allowed")
-	} else {
-		ok := grobotstxt.AgentAllowed(robotsData, USER_AGENT, "/index.html")
-		if ok {
-			fmt.Println("Access to /index.html is allowed")
-			startingPoint = "/index.html"
-		} else {
-			startingPoint = ""
-			fmt.Println("Access to /index.html is disallowed")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error fetching robots.txt: %v\n", err)
+			os.Exit(1)
 		}
-	}
 
-	fmt.Println("----------")
+		fmt.Printf("Robots.txt for %s:\n", startingUrl)
+		fmt.Println(robotsData)
 
-	if startingPoint != "" {
-		scrapeSinglePath(fmt.Sprintf("%s%s", startingUrl, startingPoint), nil)
+		fmt.Println("----------")
+
+		var startingPoint = "/"
+		ok := grobotstxt.AgentAllowed(robotsData, USER_AGENT, startingPoint)
+		if ok {
+			fmt.Println("Access to / is allowed")
+		} else {
+			ok := grobotstxt.AgentAllowed(robotsData, USER_AGENT, "/index.html")
+			if ok {
+				fmt.Println("Access to /index.html is allowed")
+				startingPoint = "/index.html"
+			} else {
+				startingPoint = ""
+				fmt.Println("Access to /index.html is disallowed")
+			}
+		}
+
+		fmt.Println("----------")
+
+		if startingPoint != "" {
+			scrapeSinglePath(fmt.Sprintf("%s%s", startingUrl, startingPoint))
+		}
 	}
 }
