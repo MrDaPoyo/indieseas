@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jimsmart/grobotstxt"
@@ -52,41 +53,61 @@ func fetchRobotsTxt(Url string) (string, error) {
 	return string(respBody), nil
 }
 
+func crawlWithRobotsAndCrawlSite(startingURL string, maxPages int, delay time.Duration) {
+	if startingURL == "" {
+		return
+	}
+
+	if !strings.Contains(startingURL, "https://") && !strings.Contains(startingURL, "http://") {
+		startingURL = "http://" + startingURL
+	}
+
+	provisionalURL, err := url.Parse(startingURL)
+	if err != nil {
+		return
+	}
+	
+	startingURL = provisionalURL.String()
+
+	robotsData, err := fetchRobotsTxt(startingURL)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error fetching robots.txt: %v\n", err)
+		return
+	}
+
+	fmt.Println("----------")
+
+	startingPoint := "/"
+	if grobotstxt.AgentAllowed(robotsData, USER_AGENT, startingPoint) {
+		fmt.Println("Access to / is allowed")
+	} else if grobotstxt.AgentAllowed(robotsData, USER_AGENT, "/index.html") {
+		fmt.Println("Access to /index.html is allowed")
+		startingPoint = "/index.html"
+	} else {
+		startingPoint = ""
+		fmt.Println("Access to /index.html is disallowed")
+	}
+
+	fmt.Println("----------")
+
+	if startingPoint != "" {
+		start := fmt.Sprintf("%s%s", startingURL, startingPoint)
+		CrawlSite(start, maxPages, delay)
+	}
+}
+
 func main() {
 	initDB()
 
 	var startingUrl string = "https://thinliquid.dev"
+	var maxPages int = 75
 
-	if startingUrl != "" {
-		robotsData, err := fetchRobotsTxt(startingUrl)
+	crawlWithRobotsAndCrawlSite(startingUrl, maxPages, time.Second)
 
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error fetching robots.txt: %v\n", err)
-			os.Exit(1)
-		}
+	var queue []Website = retrieveWebsitesToScrape()
 
-		fmt.Println("----------")
-
-		var startingPoint = "/"
-		ok := grobotstxt.AgentAllowed(robotsData, USER_AGENT, startingPoint)
-		if ok {
-			fmt.Println("Access to / is allowed")
-		} else {
-			ok := grobotstxt.AgentAllowed(robotsData, USER_AGENT, "/index.html")
-			if ok {
-				fmt.Println("Access to /index.html is allowed")
-				startingPoint = "/index.html"
-			} else {
-				startingPoint = ""
-				fmt.Println("Access to /index.html is disallowed")
-			}
-		}
-
-		fmt.Println("----------")
-
-		if startingPoint != "" {
-			start := fmt.Sprintf("%s%s", startingUrl, startingPoint)
-			CrawlSite(start, 50, time.Second)
-		}
+	for _, site := range queue {
+		crawlWithRobotsAndCrawlSite(site.Hostname, maxPages, time.Second)
+		queue = retrieveWebsitesToScrape()
 	}
 }

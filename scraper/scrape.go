@@ -98,7 +98,6 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 				for _, attr := range n.Attr {
 					if attr.Key == "href" {
 						totalLinks = append(totalLinks, n)
-						fmt.Printf("Found link: %s\n", attr.Val)
 					}
 					if attr.Key == "href" {
 						var containsImage func(*html.Node) bool
@@ -115,7 +114,6 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 						}
 						if containsImage(n) {
 							totalLinksWithImages = append(totalLinksWithImages, n)
-							fmt.Println("Found image inside a link")
 						}
 					}
 				}
@@ -123,7 +121,6 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 				for _, attr := range n.Attr {
 					if attr.Key == "src" || attr.Key == "data-src" {
 						totalImages = append(totalImages, n)
-						fmt.Printf("Found image: %s\n", attr.Val)
 					}
 				}
 			}
@@ -135,10 +132,6 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 
 	processLinksImages(doc)
 
-	fmt.Println("----------")
-	fmt.Printf("Total links found: %d\n", len(totalLinks))
-	fmt.Printf("Total links with images found: %d\n", len(totalLinksWithImages))
-	fmt.Printf("Total images found: %d\n", len(totalImages))
 	fmt.Println("----------")
 
 	var foundButtons []Button

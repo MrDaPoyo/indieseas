@@ -198,3 +198,9 @@ func markWebsiteAsScraped(Url string) error {
 	website.IsScraped = true
 	return db.Save(&website).Error
 }
+
+func retrieveWebsitesToScrape() []Website {
+	var websites []Website
+	db.Where("is_scraped = ?", false).Find(&websites)
+	return websites
+}
