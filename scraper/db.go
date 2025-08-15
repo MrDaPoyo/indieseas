@@ -34,19 +34,18 @@ type ScrapedImages struct {
 	Hash      string `gorm:"size:64"`
 }
 
+type ScrapedPages struct {
+	gorm.Model
+	ID        uint   `gorm:"primaryKey"`
+	WebsiteID uint   `gorm:"foreignKey:WebsiteID;references:ID"`
+	Hash      string `gorm:"size:64;uniqueIndex:uniq_scraped_pages_hash"`
+}
+
 type Website struct {
 	gorm.Model
 	ID        uint   `gorm:"primaryKey"`
 	Hostname  string `gorm:"size:255;uniqueIndex"`
 	IsScraped bool   `gorm:"default:false"`
-}
-
-type WebsitePage struct {
-	gorm.Model
-	ID           uint   `gorm:"primaryKey"`
-	WebsiteID    uint   `gorm:"foreignKey:WebsiteID;references:ID"`
-	Url          string `gorm:"size:255"`
-	TotalButtons int    `gorm:"default:0"`
 }
 
 type ButtonsRelations struct {
@@ -73,7 +72,7 @@ func initDB() {
 		panic("failed to connect database")
 	}
 
-	db.AutoMigrate(&Button{}, &ButtonsRelations{}, &ScrapedImages{}, &Website{}, &WebsitePage{})
+	db.AutoMigrate(&Button{}, &ButtonsRelations{}, &ScrapedImages{}, &ScrapedPages{}, &Website{})
 }
 
 func markImageAsScraped(link string) error {
@@ -93,6 +92,30 @@ func hasImageBeenScrapedBefore(link string) bool {
 	hash := hashSha256(fmt.Sprintf("%s%s", url.Host, url.Path))
 	var count int64
 	db.Model(&ScrapedImages{}).Where("hash = ?", hash).Count(&count)
+	return count > 0
+}
+
+func markPathAsScraped(link string) error {
+	parsed, err := url.Parse(link)
+	if err != nil {
+		return err
+	}
+	hash := hashSha256(fmt.Sprintf("%s%s", parsed.Host, parsed.Path))
+	rel := ScrapedPages{Hash: hash}
+	if err := db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "hash"}}, DoNothing: true}).Create(&rel).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func hasPathBeenScrapedBefore(link string) bool {
+	parsed, err := url.Parse(link)
+	if err != nil {
+		return false
+	}
+	hash := hashSha256(fmt.Sprintf("%s%s", parsed.Host, parsed.Path))
+	var count int64
+	db.Model(&ScrapedPages{}).Where("hash = ?", hash).Count(&count)
 	return count > 0
 }
 
@@ -157,3 +180,25 @@ func ensureWebsiteRelation(buttonID uint, linksTo string) {
 	}
 }
 
+func markWebsiteAsScraped(Url string) error {
+	parsedURL, err := url.Parse(Url)
+	if err != nil {
+		return err
+	}
+
+	hostname := parsedURL.Hostname()
+	var website Website
+	if err := db.Where("hostname = ?", hostname).First(&website).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			website = Website{Hostname: hostname, IsScraped: true}
+			if err := db.Create(&website).Error; err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+
+	website.IsScraped = true
+	return db.Save(&website).Error
+}

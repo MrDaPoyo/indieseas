@@ -60,7 +60,7 @@ func isIgnoredLink(s string) bool {
 			return true
 		}
 	}
-	
+
 	return strings.Contains(ls, "cdn-cgi")
 }
 
@@ -77,6 +77,8 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 		fmt.Printf("Failed to fetch %s: %s\n", path, resp.Status)
 		return nil
 	}
+
+	_ = markPathAsScraped(path)
 
 	doc, err := html.Parse(resp.Body)
 	if err != nil {
@@ -235,7 +237,6 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 
 	upsertButtons(foundButtons)
 
-	// Collect same-host links for crawling
 	baseHost := strings.ToLower(resp.Request.URL.Hostname())
 	seenLinks := make(map[string]struct{})
 	for _, a := range totalLinks {
@@ -393,9 +394,15 @@ func CrawlSite(startURL string, maxPages int, delay time.Duration) {
 			time.Sleep(delay)
 		}
 	}
-	
+
 	for _, link := range fetchedPages {
 		fmt.Printf("Visited: %s\n", link)
 	}
+
+	markWebsiteAsScraped(start.Hostname())
+	if len(fetchedPages) == 0 {
+		fmt.Println("No pages were fetched.")
+	}
+
 	fmt.Printf("Crawl finished. Pages crawled: %d (cap %d).\n", pagesCrawled, maxPages)
 }
