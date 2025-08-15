@@ -268,8 +268,27 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 			sameHostLinks = append(sameHostLinks, norm)
 		}
 	}
+	// Prioritize certain common pages so they get crawled earlier.
+	priorityKeywords := []string{"/buttons", "/links", "/outbount", "/sitemap", "/about"}
 
-	return sameHostLinks
+	var prioritized []string
+	var others []string
+	for _, l := range sameHostLinks {
+		ll := strings.ToLower(l)
+		matched := false
+		for _, kw := range priorityKeywords {
+			if strings.Contains(ll, kw) {
+				prioritized = append(prioritized, l)
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			others = append(others, l)
+		}
+	}
+	// return prioritized links first, then the rest (preserve discovery order within each group)
+	return append(prioritized, others...)
 }
 
 func downloadImage(imgUrl string) []byte {
@@ -359,6 +378,11 @@ func CrawlSite(startURL string, maxPages int, delay time.Duration) {
 		if _, seen := visited[current]; seen {
 			continue
 		}
+
+		if hasPathBeenScrapedBefore(current) {
+			continue
+		}
+
 		visited[current] = struct{}{}
 
 		fmt.Printf("Crawling (%d/%d): %s\n", pagesCrawled+1, maxPages, current)

@@ -125,8 +125,8 @@ func upsertButtons(buttons []Button) {
 	}
 	for _, b := range buttons {
 		var existing Button
-		err := db.Where("link = ?", b.Link).First(&existing).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		db.Where("link = ?", b.Link).Find(&existing)
+		if existing.ID == 0 {
 			if err := db.Create(&b).Error; err != nil {
 				fmt.Printf("DB create error for %s: %v\n", b.Link, err)
 				continue
@@ -134,10 +134,6 @@ func upsertButtons(buttons []Button) {
 			if b.LinksTo != "" {
 				ensureWebsiteRelation(b.ID, b.LinksTo)
 			}
-			continue
-		}
-		if err != nil {
-			fmt.Printf("DB read error for %s: %v\n", b.Link, err)
 			continue
 		}
 

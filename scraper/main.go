@@ -65,9 +65,6 @@ func main() {
 			os.Exit(1)
 		}
 
-		fmt.Printf("Robots.txt for %s:\n", startingUrl)
-		fmt.Println(robotsData)
-
 		fmt.Println("----------")
 
 		var startingPoint = "/"
