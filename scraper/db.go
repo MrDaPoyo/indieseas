@@ -3,14 +3,16 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
+	"strings"
 
 	"crypto/sha256"
 	"encoding/hex"
-	"net/url"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/joho/godotenv"
 )
@@ -22,7 +24,7 @@ type Button struct {
 	ID      uint   `gorm:"primaryKey"`
 	Value   []byte `gorm:"size:100"`
 	Link    string `gorm:"size:255"`
-	LinksTo string `gorm:"size:50"`
+	LinksTo string `gorm:"-"`
 }
 
 type ScrapedImages struct {
@@ -32,11 +34,26 @@ type ScrapedImages struct {
 	Hash      string `gorm:"size:64"`
 }
 
+type Website struct {
+	gorm.Model
+	ID        uint   `gorm:"primaryKey"`
+	Hostname  string `gorm:"size:255;uniqueIndex"`
+	IsScraped bool   `gorm:"default:false"`
+}
+
+type WebsitePage struct {
+	gorm.Model
+	ID           uint   `gorm:"primaryKey"`
+	WebsiteID    uint   `gorm:"foreignKey:WebsiteID;references:ID"`
+	Url          string `gorm:"size:255"`
+	TotalButtons int    `gorm:"default:0"`
+}
+
 type ButtonsRelations struct {
 	gorm.Model
 	ID        uint `gorm:"primaryKey"`
-	ButtonID  uint `gorm:"foreignKey:ButtonID;references:ID"`
-	WebsiteID uint `gorm:"foreignKey:WebsiteID;references:ID"`
+	ButtonID  uint `gorm:"foreignKey:ButtonID;references:ID;index:uniq_btn_site,unique"`
+	WebsiteID uint `gorm:"foreignKey:WebsiteID;references:ID;index:uniq_btn_site,unique"`
 }
 
 func hashSha256(data string) string {
@@ -56,7 +73,7 @@ func initDB() {
 		panic("failed to connect database")
 	}
 
-	db.AutoMigrate(&Button{}, &ButtonsRelations{}, &ScrapedImages{})
+	db.AutoMigrate(&Button{}, &ButtonsRelations{}, &ScrapedImages{}, &Website{}, &WebsitePage{})
 }
 
 func markImageAsScraped(link string) error {
@@ -89,6 +106,10 @@ func upsertButtons(buttons []Button) {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			if err := db.Create(&b).Error; err != nil {
 				fmt.Printf("DB create error for %s: %v\n", b.Link, err)
+				continue
+			}
+			if b.LinksTo != "" {
+				ensureWebsiteRelation(b.ID, b.LinksTo)
 			}
 			continue
 		}
@@ -101,21 +122,38 @@ func upsertButtons(buttons []Button) {
 		if len(b.Value) > 0 {
 			updates["value"] = b.Value
 		}
-		if b.LinksTo != "" {
-			updates["links_to"] = b.LinksTo
-		}
-		if len(updates) == 0 {
-			continue
+		if len(updates) > 0 {
+			if err := db.Model(&existing).Updates(updates).Error; err != nil {
+				fmt.Printf("DB update error for %s: %v\n", b.Link, err)
+			}
 		}
 
-		if err := db.Model(&existing).Updates(updates).Error; err != nil {
-			fmt.Printf("DB update error for %s: %v\n", b.Link, err)
+		if b.LinksTo != "" {
+			ensureWebsiteRelation(existing.ID, b.LinksTo)
 		}
 	}
 }
 
-func hasButtonBeenScrapedBefore(link string) bool {
-	var count int64
-	db.Model(&Button{}).Where("link = ?", link).Count(&count)
-	return count > 0
+func ensureWebsiteRelation(buttonID uint, linksTo string) {
+	u, err := url.Parse(linksTo)
+	if err != nil || u.Host == "" {
+		return
+	}
+
+	host := strings.ToLower(u.Hostname())
+
+	site := Website{Hostname: host}
+	if err := db.FirstOrCreate(&site, Website{Hostname: host}).Error; err != nil {
+		fmt.Printf("DB firstOrCreate website %s error: %v\n", host, err)
+		return
+	}
+
+	rel := ButtonsRelations{ButtonID: buttonID, WebsiteID: site.ID}
+	if err := db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "button_id"}, {Name: "website_id"}},
+		DoNothing: true,
+	}).Create(&rel).Error; err != nil {
+		fmt.Printf("DB upsert relation (button %d -> website %d) error: %v\n", buttonID, site.ID, err)
+	}
 }
+
