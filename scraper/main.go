@@ -66,7 +66,7 @@ func crawlWithRobotsAndCrawlSite(startingURL string, maxPages int, delay time.Du
 	if err != nil {
 		return
 	}
-	
+
 	startingURL = provisionalURL.String()
 
 	robotsData, err := fetchRobotsTxt(startingURL)
@@ -108,6 +108,5 @@ func main() {
 
 	for _, site := range queue {
 		crawlWithRobotsAndCrawlSite(site.Hostname, maxPages, time.Second)
-		queue = retrieveWebsitesToScrape()
 	}
 }
