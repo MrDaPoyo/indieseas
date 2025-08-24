@@ -261,7 +261,7 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 			sameHostLinks = append(sameHostLinks, norm)
 		}
 	}
-	// Prioritize certain common pages so they get crawled earlier.
+
 	priorityKeywords := []string{"/buttons", "/links", "/outbount", "/sitemap", "/about"}
 
 	var prioritized []string
@@ -280,7 +280,7 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 			others = append(others, l)
 		}
 	}
-	// return prioritized links first, then the rest (preserve discovery order within each group)
+
 	return append(prioritized, others...)
 }
 

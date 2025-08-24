@@ -108,5 +108,6 @@ func main() {
 
 	for _, site := range queue {
 		crawlWithRobotsAndCrawlSite(site.Hostname, maxPages, time.Second)
+		time.Sleep(2 * time.Second)
 	}
 }
