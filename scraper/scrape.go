@@ -360,6 +360,11 @@ func CrawlSite(startURL string, maxPages int, delay time.Duration) {
 	}
 
 	baseHost := strings.ToLower(start.Hostname())
+	if hasPathBeenScrapedBefore(baseHost) {
+		fmt.Printf("Host %s has already been scraped. Skipping...\n", baseHost)
+		return
+	}
+
 	queue := []string{start.String()}
 	visited := make(map[string]struct{})
 	var fetchedPages []string
@@ -418,7 +423,7 @@ func CrawlSite(startURL string, maxPages int, delay time.Duration) {
 
 	markWebsiteAsScraped(start.Hostname())
 	if len(fetchedPages) == 0 {
-		fmt.Println("No pages were fetched.")
+		fmt.Println("No pages were fetched for ", start.Hostname())
 	}
 
 	fmt.Printf("Crawl finished. Pages crawled: %d (cap %d).\n", pagesCrawled, maxPages)

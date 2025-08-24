@@ -69,10 +69,23 @@ func crawlWithRobotsAndCrawlSite(startingURL string, maxPages int, delay time.Du
 
 	startingURL = provisionalURL.String()
 
-	robotsData, err := fetchRobotsTxt(startingURL)
+	provisionalURL, _ = url.Parse(startingURL)
+	host := provisionalURL.Hostname()
+	fetched, _, err := getRobotsStatus(host)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error fetching robots.txt: %v\n", err)
-		return
+		fmt.Fprintf(os.Stderr, "Error checking robots status: %v\n", err)
+	}
+
+	var robotsData string
+	if !fetched {
+		robotsData, err = fetchRobotsTxt(startingURL)
+		if err != nil {
+			_ = markRobotsFetched(host, true)
+			fmt.Fprintf(os.Stderr, "Error fetching robots.txt: %v\n", err)
+			robotsData = ""
+		} else {
+			_ = markRobotsFetched(host, false)
+		}
 	}
 
 	fmt.Println("----------")
@@ -99,12 +112,15 @@ func crawlWithRobotsAndCrawlSite(startingURL string, maxPages int, delay time.Du
 func main() {
 	initDB()
 
-	var startingUrl string = "https://thinliquid.dev"
 	var maxPages int = 75
-
-	crawlWithRobotsAndCrawlSite(startingUrl, maxPages, time.Second)
-
 	var queue []Website = retrieveWebsitesToScrape()
+
+	if len(queue) == 0 {
+		var startingUrl string = "https://thinliquid.dev"
+
+		crawlWithRobotsAndCrawlSite(startingUrl, maxPages, time.Second)
+		time.Sleep(2 * time.Second)
+	}
 
 	for _, site := range queue {
 		crawlWithRobotsAndCrawlSite(site.Hostname, maxPages, time.Second)

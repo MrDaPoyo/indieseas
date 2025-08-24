@@ -46,6 +46,8 @@ type Website struct {
 	ID        uint   `gorm:"primaryKey"`
 	Hostname  string `gorm:"size:255;uniqueIndex"`
 	IsScraped bool   `gorm:"default:false"`
+	RobotsFetched bool `gorm:"default:false"`
+	RobotsFailed bool `gorm:"default:false"`
 }
 
 type ButtonsRelations struct {
@@ -197,6 +199,40 @@ func markWebsiteAsScraped(Url string) error {
 
 	website.IsScraped = true
 	return db.Save(&website).Error
+}
+
+func markRobotsFetched(hostname string, failed bool) error {
+	host := strings.ToLower(strings.TrimSpace(hostname))
+	if host == "" {
+		return nil
+	}
+	var site Website
+	err := db.Where("hostname = ?", host).First(&site).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		site = Website{Hostname: host, RobotsFetched: true, RobotsFailed: failed}
+		return db.Create(&site).Error
+	} else if err != nil {
+		return err
+	}
+
+	site.RobotsFetched = true
+	site.RobotsFailed = failed
+	return db.Save(&site).Error
+}
+
+func getRobotsStatus(hostname string) (bool, bool, error) {
+	host := strings.ToLower(strings.TrimSpace(hostname))
+	if host == "" {
+		return false, false, nil
+	}
+	var site Website
+	if err := db.Where("hostname = ?", host).First(&site).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, false, nil
+		}
+		return false, false, err
+	}
+	return site.RobotsFetched, site.RobotsFailed, nil
 }
 
 func retrieveWebsitesToScrape() []Website {
