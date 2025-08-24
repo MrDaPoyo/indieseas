@@ -51,7 +51,7 @@ export const GET: APIRoute = async ({ url }) => {
 		const imageBytes = button.value;
 		const imageName = `button-${id}.png`;
 
-		return new Response(imageBytes, {
+		return new Response(imageBytes as any, {
 			status: 200,
 			headers: {
 				"Content-Type": "image/png",
