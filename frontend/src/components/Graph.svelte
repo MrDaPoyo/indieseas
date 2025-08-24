@@ -2,7 +2,6 @@
     import { onMount } from 'svelte';
     import * as d3 from 'd3';
 
-    export let websites = [];
     export let relations = [];
 
     let container;
@@ -39,11 +38,21 @@
             }
 
             const existingIds = new Set();
-            for (let i = 0; i < allButtonIds.length; i++) {
-                const id = allButtonIds[i];
-                progressMessage = `Retrieving button ${i + 1} / ${allButtonIds.length}`;
-                const exists = await checkButtonExists(id);
-                if (exists) existingIds.add(id);
+            const fetchCache = new Map();
+            const uniqueIds = Array.from(new Set(allButtonIds));
+            for (let i = 0; i < uniqueIds.length; i++) {
+                const id = uniqueIds[i];
+                progressMessage = `Retrieving button ${i + 1} / ${uniqueIds.length}`;
+                if (existingIds.has(id)) continue;
+                let promise = fetchCache.get(id);
+                if (!promise) {
+                    promise = checkButtonExists(id);
+                    fetchCache.set(id, promise);
+                }
+                try {
+                    const exists = await promise;
+                    if (exists) existingIds.add(id);
+                } catch {}
             }
 
             progressMessage = 'Preparing graph...';
@@ -132,15 +141,18 @@
                 .attr('preserveAspectRatio', 'xMidYMid slice');
 
             const counts = nodes.map(d => d.count);
-            const minC = counts.length ? Math.min(...counts) : 0;
-            const maxC = counts.length ? Math.max(...counts) : 1;
-            const sScale = d3.scaleSqrt().domain([minC || 0, maxC || 1]).range([0.8, 2.0]);
+            const nonZeroCounts = counts.filter(c => c > 0);
+            const STRAY_SCALE = 0.6;
+            const baseScale = nonZeroCounts.length
+                ? d3.scaleSqrt().domain([1, Math.max(...nonZeroCounts)]).range([0.9, 2.0])
+                : () => 1;
+            const getScale = d => (d.count === 0 ? STRAY_SCALE : baseScale(d.count));
 
             const simulation = d3.forceSimulation(nodes)
                 .force('link', d3.forceLink(links).id(d => d.id).distance(340).strength(0.06))
                 .force('charge', d3.forceManyBody().strength(-220))
                 .force('center', d3.forceCenter(width / 2, height / 2))
-                .force('collision', d3.forceCollide().radius(d => (BUTTON_W / 2) * sScale(d.count) + 8).strength(0.7))
+                .force('collision', d3.forceCollide().radius(d => (BUTTON_W / 2) * getScale(d) + 8).strength(0.7))
                 .on('tick', ticked);
 
             
@@ -152,7 +164,7 @@
                     .attr('x2', d => d.target.x)
                     .attr('y2', d => d.target.y);
 
-                node.attr('transform', d => `translate(${d.x},${d.y}) scale(${sScale(d.count)})`);
+                node.attr('transform', d => `translate(${d.x},${d.y}) scale(${getScale(d)})`);
             }
 
             svg.call(d3.zoom()
@@ -182,4 +194,17 @@
     {#if !loaded}
         <h1>{progressMessage}</h1>
     {/if}
+    <style>
+        h1 {
+            color: white;
+            text-align: center;
+            margin: auto;
+        }
+        
+        div {
+            height: 100vh;
+            padding: auto;
+            background-color: #10101a;
+        }
+    </style>
 </div>
