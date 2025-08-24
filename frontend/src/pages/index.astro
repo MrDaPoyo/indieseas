@@ -1,8 +1,23 @@
 ---
-import Welcome from '../components/Welcome.astro';
 import Layout from '../layouts/Layout.astro';
+import Graph from '../components/Graph.svelte';
+
+let buttons = [];
+let websites = [];
+let relations = [];
+
+try {
+  	const query = await fetch(`http://${Astro.url.host}/api/allButtons`);
+  	const json = await query.json();
+
+  	buttons = json.buttons || [];
+  	websites = json.websites || [];
+  	relations = json.relations || [];
+} catch (error) {
+  	console.error('Failed to fetch data:', error);
+}
 ---
 
 <Layout>
-	<Welcome />
+	<Graph {buttons} {websites} {relations} client:only />
 </Layout>

@@ -1,0 +1,185 @@
+<script>
+    import { onMount } from 'svelte';
+    import * as d3 from 'd3';
+
+    export let websites = [];
+    export let relations = [];
+
+    let container;
+    let progressMessage = 'Starting...';
+    let loaded = false;
+
+    onMount(() => {
+        const buttonsToSites = new Map();
+        const siteToButtons = new Map();
+        for (const { button_id: b, website_id: s } of relations) {
+            if (!buttonsToSites.has(b)) buttonsToSites.set(b, new Set());
+            buttonsToSites.get(b).add(s);
+            if (!siteToButtons.has(s)) siteToButtons.set(s, new Set());
+            siteToButtons.get(s).add(b);
+        }
+
+        let destroy = () => {};
+
+        (async () => {
+            const allButtonIds = Array.from(buttonsToSites.keys());
+
+            async function checkButtonExists(id) {
+                try {
+                    let res = await fetch(`/api/getButton?id=${encodeURIComponent(id)}`, { method: 'HEAD' });
+                    if (res.ok) return true;
+                    if (res.status === 405) {
+                        res = await fetch(`/api/getButton?id=${encodeURIComponent(id)}`, { method: 'GET', cache: 'no-store' });
+                        return res.ok;
+                    }
+                    return false;
+                } catch {
+                    return false;
+                }
+            }
+
+            const existingIds = new Set();
+            for (let i = 0; i < allButtonIds.length; i++) {
+                const id = allButtonIds[i];
+                progressMessage = `Retrieving button ${i + 1} / ${allButtonIds.length}`;
+                const exists = await checkButtonExists(id);
+                if (exists) existingIds.add(id);
+            }
+
+            progressMessage = 'Preparing graph...';
+
+            const neighborsByButton = new Map();
+            for (const bset of siteToButtons.values()) {
+                const arr = Array.from(bset).filter(id => existingIds.has(id));
+                if (arr.length < 2) continue;
+                for (let i = 0; i < arr.length; i++) {
+                    for (let j = i + 1; j < arr.length; j++) {
+                        const a = arr[i], b = arr[j];
+                        if (!neighborsByButton.has(a)) neighborsByButton.set(a, new Set());
+                        if (!neighborsByButton.has(b)) neighborsByButton.set(b, new Set());
+                        neighborsByButton.get(a).add(b);
+                        neighborsByButton.get(b).add(a);
+                    }
+                }
+            }
+
+            const nodes = [];
+            const nodesById = new Map();
+            for (const bid of existingIds) {
+                const degree = neighborsByButton.get(bid)?.size || 0;
+                const n = { id: `b-${bid}`, buttonId: bid, type: 'button', count: degree };
+                nodes.push(n);
+                nodesById.set(n.id, n);
+            }
+
+            const linkMap = new Map();
+            for (const bset of siteToButtons.values()) {
+                const arr = Array.from(bset).filter(id => existingIds.has(id));
+                if (arr.length < 2) continue;
+                for (let i = 0; i < arr.length; i++) {
+                    for (let j = i + 1; j < arr.length; j++) {
+                        const a = arr[i], b = arr[j];
+                        const [minId, maxId] = a < b ? [a, b] : [b, a];
+                        const key = `${minId}|${maxId}`;
+                        if (!linkMap.has(key)) linkMap.set(key, { a: minId, b: maxId, weight: 0 });
+                        linkMap.get(key).weight++;
+                    }
+                }
+            }
+            const links = Array.from(linkMap.values()).map(({ a, b, weight }) => ({
+                source: `b-${a}`,
+                target: `b-${b}`,
+                weight
+            }));
+
+            container.innerHTML = '';
+            loaded = true;
+
+            const width = container.clientWidth || 800;
+            const height = container.clientHeight || 600;
+
+            const svg = d3.select(container)
+                .append('svg')
+                .attr('viewBox', [0, 0, width, height])
+                .attr('width', '100%')
+                .attr('height', '100%')
+                .attr('style', 'max-height: 100%; display: block; background: #0b1020;');
+
+            const zoomLayer = svg.append('g');
+
+            const link = zoomLayer.append('g')
+                .attr('stroke', '#6b7280')
+                .attr('stroke-opacity', 0.45)
+                .selectAll('line')
+                .data(links)
+                .join('line')
+                .attr('stroke-width', 1.5);
+
+            const BUTTON_W = 88;
+            const BUTTON_H = 31;
+
+            const node = zoomLayer.append('g')
+                .selectAll('g')
+                .data(nodes)
+                .join('g');
+
+            node.append('image')
+                .attr('href', d => `/api/getButton?id=${encodeURIComponent(d.buttonId)}`)
+                .attr('width', BUTTON_W)
+                .attr('height', BUTTON_H)
+                .attr('x', -BUTTON_W / 2)
+                .attr('y', -BUTTON_H / 2)
+                .attr('preserveAspectRatio', 'xMidYMid slice');
+
+            const counts = nodes.map(d => d.count);
+            const minC = counts.length ? Math.min(...counts) : 0;
+            const maxC = counts.length ? Math.max(...counts) : 1;
+            const sScale = d3.scaleSqrt().domain([minC || 0, maxC || 1]).range([0.8, 2.0]);
+
+            const simulation = d3.forceSimulation(nodes)
+                .force('link', d3.forceLink(links).id(d => d.id).distance(340).strength(0.06))
+                .force('charge', d3.forceManyBody().strength(-220))
+                .force('center', d3.forceCenter(width / 2, height / 2))
+                .force('collision', d3.forceCollide().radius(d => (BUTTON_W / 2) * sScale(d.count) + 8).strength(0.7))
+                .on('tick', ticked);
+
+            
+
+            function ticked() {
+                link
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+
+                node.attr('transform', d => `translate(${d.x},${d.y}) scale(${sScale(d.count)})`);
+            }
+
+            svg.call(d3.zoom()
+                .scaleExtent([0.2, 4])
+                .on('zoom', (event) => zoomLayer.attr('transform', event.transform)));
+
+            const ro = new ResizeObserver(() => {
+                const w = container.clientWidth || width;
+                const h = container.clientHeight || height;
+                svg.attr('viewBox', [0, 0, w, h]);
+                simulation.force('center', d3.forceCenter(w / 2, h / 2)).alpha(0.2).restart();
+            });
+            ro.observe(container);
+
+            destroy = () => {
+                ro.disconnect();
+                simulation.stop();
+                svg.remove();
+            };
+        })();
+
+        return () => destroy();
+    });
+</script>
+
+<div bind:this={container} style="width:100%; height:100vh;">
+    {#if !loaded}
+        <h1>{progressMessage}</h1>
+    {/if}
+</div>
