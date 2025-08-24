@@ -235,8 +235,21 @@ func getRobotsStatus(hostname string) (bool, bool, error) {
 	return site.RobotsFetched, site.RobotsFailed, nil
 }
 
-func retrieveWebsitesToScrape() []Website {
+func retrieveWebsitesToScrape() []string {
 	var websites []Website
 	db.Where("is_scraped = ?", false).Find(&websites)
-	return websites
+	var roots []string
+	seen := make(map[string]struct{})
+	for _, w := range websites {
+		host := strings.ToLower(strings.TrimSpace(w.Hostname))
+		if host == "" || w.IsScraped {
+			continue
+		}
+		if _, ok := seen[host]; ok {
+			continue
+		}
+		seen[host] = struct{}{}
+		roots = append(roots, host)
+	}
+	return roots
 }

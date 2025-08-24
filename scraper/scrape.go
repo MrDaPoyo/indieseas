@@ -423,7 +423,7 @@ func CrawlSite(startURL string, maxPages int, delay time.Duration) {
 
 	markWebsiteAsScraped(start.Hostname())
 	if len(fetchedPages) == 0 {
-		fmt.Println("No pages were fetched for ", start.Hostname())
+		fmt.Println("No pages were fetched for", start.Hostname())
 	}
 
 	fmt.Printf("Crawl finished. Pages crawled: %d (cap %d).\n", pagesCrawled, maxPages)

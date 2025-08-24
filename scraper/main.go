@@ -113,7 +113,7 @@ func main() {
 	initDB()
 
 	var maxPages int = 75
-	var queue []Website = retrieveWebsitesToScrape()
+	var queue []string = retrieveWebsitesToScrape()
 
 	if len(queue) == 0 {
 		var startingUrl string = "https://thinliquid.dev"
@@ -123,7 +123,7 @@ func main() {
 	}
 
 	for _, site := range queue {
-		crawlWithRobotsAndCrawlSite(site.Hostname, maxPages, time.Second)
+		crawlWithRobotsAndCrawlSite(site, maxPages, time.Second)
 		time.Sleep(2 * time.Second)
 	}
 }
