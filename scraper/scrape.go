@@ -194,7 +194,6 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 				abs := baseURL.ResolveReference(ah)
 				if !isIgnoredLink(abs.String()) && abs.Host != "" && !strings.EqualFold(abs.Host, baseURL.Host) {
 					linksTo = abs.String()
-					// Queue external destination for future crawl
 					ensureWebsiteQueued(linksTo)
 				}
 			}
@@ -257,7 +256,6 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 				continue
 			}
 			if strings.ToLower(u.Hostname()) != baseHost {
-				// It's an off-domain link; consider queuing the external website for later crawling
 				ensureWebsiteQueued(norm)
 				continue
 			}

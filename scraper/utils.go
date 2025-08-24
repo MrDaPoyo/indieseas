@@ -97,6 +97,10 @@ func normalizePageURL(base *url.URL, raw string) (string, bool) {
 	}
 
 	u.Fragment = ""
+	if u.RawQuery != "" {
+		vals := u.Query()
+		u.RawQuery = vals.Encode()
+	}
 
 	host := strings.ToLower(u.Host)
 	u.Host = host

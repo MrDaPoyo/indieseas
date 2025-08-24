@@ -135,7 +135,11 @@ func markPathAsScraped(link string) error {
 	if err != nil {
 		return err
 	}
-	hash := hashSha256(fmt.Sprintf("%s%s", parsed.Host, parsed.Path))
+	key := fmt.Sprintf("%s%s", parsed.Host, parsed.Path)
+	if q := strings.TrimSpace(parsed.RawQuery); q != "" {
+		key = key + "?" + q
+	}
+	hash := hashSha256(key)
 
 	host := normalizeHostname(parsed.Hostname())
 	var parentWebsite = Website{}
@@ -162,7 +166,11 @@ func hasPathBeenScrapedBefore(link string) bool {
 	if err != nil {
 		return false
 	}
-	hash := hashSha256(fmt.Sprintf("%s%s", parsed.Host, parsed.Path))
+	key := fmt.Sprintf("%s%s", parsed.Host, parsed.Path)
+	if q := strings.TrimSpace(parsed.RawQuery); q != "" {
+		key = key + "?" + q
+	}
+	hash := hashSha256(key)
 	var count int64
 	db.Model(&ScrapedPages{}).Where("hash = ?", hash).Count(&count)
 	return count > 0
@@ -271,7 +279,6 @@ func markWebsiteAsScraped(raw string) error {
 	return db.Save(&website).Error
 }
 
-// isWebsiteScraped checks the Websites table for the given hostname
 func isWebsiteScraped(hostname string) bool {
 	host := normalizeHostname(hostname)
 	if host == "" {

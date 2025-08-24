@@ -139,6 +139,5 @@ func main() {
 		if processed >= safetyCap {
 			break
 		}
-		// loop back to pick up any newly queued websites
 	}
 }
