@@ -17,6 +17,7 @@ export const GET: APIRoute = async () => {
 
         const relations = await db.execute(sql`SELECT * FROM buttons_relations`);
         const buttonResults = await db.execute(sql`SELECT id, value, link FROM buttons`);
+        const websiteResults = await db.execute(sql`SELECT id, hostname FROM websites`);
 
         await client.end();
 
@@ -37,10 +38,10 @@ export const GET: APIRoute = async () => {
                 button_id: relation.button_id,
                 website_id: relation.website_id,
             })),
-            // "websites": websites.map((website) => ({
-            //     id: website.id,
-            //    url: website.url,
-            // })),
+            "websites": websiteResults.map((website) => ({
+                id: website.id,
+                hostname: website.hostname,
+            })),
         };
         
         return new Response(JSON.stringify(cleanResults), {

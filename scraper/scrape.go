@@ -194,6 +194,8 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 				abs := baseURL.ResolveReference(ah)
 				if !isIgnoredLink(abs.String()) && abs.Host != "" && !strings.EqualFold(abs.Host, baseURL.Host) {
 					linksTo = abs.String()
+					// Queue external destination for future crawl
+					ensureWebsiteQueued(linksTo)
 				}
 			}
 		}
@@ -202,6 +204,7 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 			foundButtons = append(foundButtons, Button{
 				Link:    norm,
 				LinksTo: linksTo,
+				FoundOn: baseURL.String(),
 			})
 			continue
 		}
@@ -210,6 +213,7 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 			foundButtons = append(foundButtons, Button{
 				Link:    norm,
 				LinksTo: linksTo,
+				FoundOn: baseURL.String(),
 			})
 			continue
 		}
@@ -218,8 +222,9 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 		imageData := downloadImage(norm)
 		if verifyImageSize(imageData) {
 			btn := Button{
-				Value: imageData,
-				Link:  norm,
+				Value:   imageData,
+				Link:    norm,
+				FoundOn: baseURL.String(),
 			}
 			if linksTo != "" {
 				btn.LinksTo = linksTo
@@ -252,6 +257,8 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 				continue
 			}
 			if strings.ToLower(u.Hostname()) != baseHost {
+				// It's an off-domain link; consider queuing the external website for later crawling
+				ensureWebsiteQueued(norm)
 				continue
 			}
 			if _, dup := seenLinks[norm]; dup {
@@ -360,7 +367,7 @@ func CrawlSite(startURL string, maxPages int, delay time.Duration) {
 	}
 
 	baseHost := strings.ToLower(start.Hostname())
-	if hasPathBeenScrapedBefore(baseHost) {
+	if isWebsiteScraped(baseHost) {
 		fmt.Printf("Host %s has already been scraped. Skipping...\n", baseHost)
 		return
 	}

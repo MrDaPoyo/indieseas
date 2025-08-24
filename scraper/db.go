@@ -9,12 +9,16 @@ import (
 
 	"crypto/sha256"
 	"encoding/hex"
+	"log"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"gorm.io/gorm/logger"
 
 	"github.com/joho/godotenv"
+	"golang.org/x/net/idna"
 )
 
 var db *gorm.DB
@@ -25,6 +29,7 @@ type Button struct {
 	Value   []byte `gorm:"size:100"`
 	Link    string `gorm:"size:255"`
 	LinksTo string `gorm:"-"`
+	FoundOn string `gorm:"-"`
 }
 
 type ScrapedImages struct {
@@ -32,6 +37,7 @@ type ScrapedImages struct {
 	ID        uint   `gorm:"primaryKey"`
 	WebsiteID uint   `gorm:"foreignKey:WebsiteID;references:ID"`
 	Hash      string `gorm:"size:64"`
+	Url       string `gorm:"size:2048"`
 }
 
 type ScrapedPages struct {
@@ -39,15 +45,16 @@ type ScrapedPages struct {
 	ID        uint   `gorm:"primaryKey"`
 	WebsiteID uint   `gorm:"foreignKey:WebsiteID;references:ID"`
 	Hash      string `gorm:"size:64;uniqueIndex:uniq_scraped_pages_hash"`
+	Url       string `gorm:"size:2048"`
 }
 
 type Website struct {
 	gorm.Model
-	ID        uint   `gorm:"primaryKey"`
-	Hostname  string `gorm:"size:255;uniqueIndex"`
-	IsScraped bool   `gorm:"default:false"`
-	RobotsFetched bool `gorm:"default:false"`
-	RobotsFailed bool `gorm:"default:false"`
+	ID            uint   `gorm:"primaryKey"`
+	Hostname      string `gorm:"size:255;uniqueIndex"`
+	IsScraped     bool   `gorm:"default:false"`
+	RobotsFetched bool   `gorm:"default:false"`
+	RobotsFailed  bool   `gorm:"default:false"`
 }
 
 type ButtonsRelations struct {
@@ -65,11 +72,37 @@ func hashSha256(data string) string {
 	return hexHash
 }
 
+func normalizeHostname(host string) string {
+	h := strings.ToLower(strings.TrimSpace(host))
+	if h == "" {
+		return ""
+	}
+
+	ascii, err := idna.ToASCII(h)
+	if err != nil {
+		return h
+	}
+	return ascii
+}
+
 func initDB() {
 	godotenv.Load("../.env")
 	var err error
 	dsn := os.Getenv("DB_URL")
-	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+
+	newLogger := logger.New(
+		log.New(os.Stdout, "\r\n", log.LstdFlags),
+		logger.Config{
+			SlowThreshold:             time.Second,
+			LogLevel:                  logger.Warn,
+			IgnoreRecordNotFoundError: true,
+			Colorful:                  true,
+		},
+	)
+
+	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: newLogger,
+	})
 	if err != nil {
 		panic("failed to connect database")
 	}
@@ -83,7 +116,7 @@ func markImageAsScraped(link string) error {
 		return err
 	}
 	hash := hashSha256(fmt.Sprintf("%s%s", url.Host, url.Path))
-	return db.Create(&ScrapedImages{Hash: hash}).Error
+	return db.Create(&ScrapedImages{Hash: hash, Url: link}).Error
 }
 
 func hasImageBeenScrapedBefore(link string) bool {
@@ -103,7 +136,21 @@ func markPathAsScraped(link string) error {
 		return err
 	}
 	hash := hashSha256(fmt.Sprintf("%s%s", parsed.Host, parsed.Path))
-	rel := ScrapedPages{Hash: hash}
+
+	host := normalizeHostname(parsed.Hostname())
+	var parentWebsite = Website{}
+	if err := db.Where("hostname = ?", host).First(&parentWebsite).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			parentWebsite = Website{Hostname: host}
+			if err := db.Create(&parentWebsite).Error; err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+
+	rel := ScrapedPages{Hash: hash, Url: link, WebsiteID: parentWebsite.ID}
 	if err := db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "hash"}}, DoNothing: true}).Create(&rel).Error; err != nil {
 		return err
 	}
@@ -133,9 +180,7 @@ func upsertButtons(buttons []Button) {
 				fmt.Printf("DB create error for %s: %v\n", b.Link, err)
 				continue
 			}
-			if b.LinksTo != "" {
-				ensureWebsiteRelation(b.ID, b.LinksTo)
-			}
+			ensureWebsiteRelation(b.ID, b.FoundOn)
 			continue
 		}
 
@@ -149,19 +194,17 @@ func upsertButtons(buttons []Button) {
 			}
 		}
 
-		if b.LinksTo != "" {
-			ensureWebsiteRelation(existing.ID, b.LinksTo)
-		}
+		ensureWebsiteRelation(existing.ID, b.FoundOn)
 	}
 }
 
-func ensureWebsiteRelation(buttonID uint, linksTo string) {
-	u, err := url.Parse(linksTo)
+func ensureWebsiteRelation(buttonID uint, foundOn string) {
+	u, err := url.Parse(foundOn)
 	if err != nil || u.Host == "" {
 		return
 	}
 
-	host := strings.ToLower(u.Hostname())
+	host := normalizeHostname(u.Hostname())
 
 	site := Website{Hostname: host}
 	if err := db.FirstOrCreate(&site, Website{Hostname: host}).Error; err != nil {
@@ -178,13 +221,40 @@ func ensureWebsiteRelation(buttonID uint, linksTo string) {
 	}
 }
 
-func markWebsiteAsScraped(Url string) error {
-	parsedURL, err := url.Parse(Url)
-	if err != nil {
-		return err
+func ensureWebsiteQueued(rawURL string) {
+	if rawURL == "" || isIgnoredLink(rawURL) {
+		return
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return
 	}
 
-	hostname := parsedURL.Hostname()
+	host := normalizeHostname(u.Hostname())
+	if host == "" {
+		return
+	}
+
+	var site Website
+
+	err = db.Where("hostname = ?", host).First(&site).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		_ = db.Create(&Website{Hostname: host, IsScraped: false}).Error
+		return
+	}
+}
+
+func markWebsiteAsScraped(raw string) error {
+	var hostname string
+	if strings.Contains(raw, "://") {
+		parsedURL, err := url.Parse(raw)
+		if err != nil {
+			return err
+		}
+		hostname = normalizeHostname(parsedURL.Hostname())
+	} else {
+		hostname = normalizeHostname(raw)
+	}
 	var website Website
 	if err := db.Where("hostname = ?", hostname).First(&website).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -201,8 +271,21 @@ func markWebsiteAsScraped(Url string) error {
 	return db.Save(&website).Error
 }
 
+// isWebsiteScraped checks the Websites table for the given hostname
+func isWebsiteScraped(hostname string) bool {
+	host := normalizeHostname(hostname)
+	if host == "" {
+		return false
+	}
+	var website Website
+	if err := db.Where("hostname = ?", host).First(&website).Error; err != nil {
+		return false
+	}
+	return website.IsScraped
+}
+
 func markRobotsFetched(hostname string, failed bool) error {
-	host := strings.ToLower(strings.TrimSpace(hostname))
+	host := normalizeHostname(hostname)
 	if host == "" {
 		return nil
 	}
@@ -221,7 +304,7 @@ func markRobotsFetched(hostname string, failed bool) error {
 }
 
 func getRobotsStatus(hostname string) (bool, bool, error) {
-	host := strings.ToLower(strings.TrimSpace(hostname))
+	host := normalizeHostname(hostname)
 	if host == "" {
 		return false, false, nil
 	}
@@ -241,7 +324,7 @@ func retrieveWebsitesToScrape() []string {
 	var roots []string
 	seen := make(map[string]struct{})
 	for _, w := range websites {
-		host := strings.ToLower(strings.TrimSpace(w.Hostname))
+		host := normalizeHostname(w.Hostname)
 		if host == "" || w.IsScraped {
 			continue
 		}

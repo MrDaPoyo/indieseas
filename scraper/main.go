@@ -113,17 +113,32 @@ func main() {
 	initDB()
 
 	var maxPages int = 75
-	var queue []string = retrieveWebsitesToScrape()
+	var safetyCap int = 1000
 
-	if len(queue) == 0 {
-		var startingUrl string = "https://thinliquid.dev"
-
-		crawlWithRobotsAndCrawlSite(startingUrl, maxPages, time.Second)
-		time.Sleep(2 * time.Second)
-	}
-
-	for _, site := range queue {
-		crawlWithRobotsAndCrawlSite(site, maxPages, time.Second)
-		time.Sleep(2 * time.Second)
+	for processed := 0; processed < safetyCap; {
+		queue := retrieveWebsitesToScrape()
+		if len(queue) == 0 {
+			if processed == 0 {
+				startingUrl := "https://thinliquid.dev"
+				crawlWithRobotsAndCrawlSite(startingUrl, maxPages, time.Second)
+				processed++
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			break
+		}
+		fmt.Printf("Starting crawl of %d websites from DB\n", len(queue))
+		for _, site := range queue {
+			crawlWithRobotsAndCrawlSite(site, maxPages, time.Second)
+			processed++
+			if processed >= safetyCap {
+				break
+			}
+			time.Sleep(2 * time.Second)
+		}
+		if processed >= safetyCap {
+			break
+		}
+		// loop back to pick up any newly queued websites
 	}
 }
