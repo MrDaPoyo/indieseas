@@ -61,17 +61,32 @@
 
 		const simulation = d3
 			.forceSimulation(nodes)
+			.velocityDecay(0.85)
+			.alphaDecay(0.05)
 			.force(
 				"link",
-				d3.forceLink(links).id((d) => d.id).distance(340).strength(0.06),
+				d3.forceLink(links).id((d) => d.id).distance(420).strength(0.02),
 			)
-			.force("charge", d3.forceManyBody().strength(-220))
+			.force("charge", d3.forceManyBody().strength(-40))
 			.force("center", d3.forceCenter(width / 2, height / 2))
 			.force(
 				"collision",
-				d3.forceCollide().radius((d) => (BUTTON_W / 2) * getScale(d) + 12).strength(0.9),
+				d3.forceCollide().radius((d) => (BUTTON_W / 2) * getScale(d) + 12).strength(0.4),
 			)
-			.on("tick", ticked);
+			.on("tick", (() => {
+				let initialZoomDone = false;
+				return function() {
+					ticked();
+					if (!initialZoomDone) {
+						initialZoomDone = true;
+						const k = 0.6;
+						zoomLayer.attr(
+							"transform",
+							`translate(${(width * (1 - k)) / 2},${(height * (1 - k)) / 2}) scale(${k})`
+						);
+					}
+				};
+			})());
 
 		function ticked() {
 			linkSel
@@ -137,14 +152,14 @@
 
 			simulation.nodes(nodes);
 			simulation.force("link").links(links);
-			simulation.alpha(0.1).restart();
+			simulation.alpha(0.02).restart();
 		}
 
 		const ro = new ResizeObserver(() => {
 			const w = container.clientWidth || width;
 			const h = container.clientHeight || height;
 			svg.attr("viewBox", [0, 0, w, h]);
-			simulation.force("center", d3.forceCenter(w / 2, h / 2)).alpha(0.2).restart();
+			simulation.force("center", d3.forceCenter(w / 2, h / 2)).alpha(0.02).restart();
 		});
 		ro.observe(container);
 
@@ -203,7 +218,7 @@
 		})();
 
 		svg.call(
-			d3.zoom().scaleExtent([0.2, 4]).on("zoom", (event) => zoomLayer.attr("transform", event.transform))
+			d3.zoom().scaleExtent([0.2, 6]).on("zoom", (event) => zoomLayer.attr("transform", event.transform))
 		);
 
 		return () => {
