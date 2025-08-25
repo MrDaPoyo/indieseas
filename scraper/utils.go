@@ -106,3 +106,12 @@ func normalizePageURL(base *url.URL, raw string) (string, bool) {
 	u.Host = host
 	return u.String(), true
 }
+
+func isForbiddenWebsite(url string) bool {
+	for _, domain := range FORBIDDEN_WEBSITES {
+		if strings.Contains(url, domain) {
+			return true
+		}
+	}
+	return false
+}

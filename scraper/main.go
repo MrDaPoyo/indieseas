@@ -109,6 +109,53 @@ func crawlWithRobotsAndCrawlSite(startingURL string, maxPages int, delay time.Du
 	}
 }
 
+var FORBIDDEN_WEBSITES = []string{
+	"google.com",
+	"facebook.com",
+	"twitter.com",
+	"instagram.com",
+	"linkedin.com",
+	"youtube.com",
+	"tiktok.com",
+	"pinterest.com",
+	"reddit.com",
+	"wikipedia.org",
+	"github.com",
+	"gitlab.com",
+	"bitbucket.org",
+	"stackoverflow.com",
+	"quora.com",
+	"amazon.com",
+	"ebay.com",
+	"newground.com",
+	"tumblr.com",
+	"yahoo.com",
+	"bing.com",
+	"yandex.com",
+	"baidu.com",
+	"vk.com",
+	"weibo.com",
+	"twitch.tv",
+	"discord.com",
+	"whatsapp.com",
+	"telegram.org",
+	"signal.org",
+	"slack.com",
+	"microsoft.com",
+	"apple.com",
+	"adobe.com",
+	"paypal.com",
+	"bsky.app",
+	"g.co",
+	"goo.gl",
+	"bit.ly",
+	"tinyurl.com",
+	"ow.ly",
+	"t.co",
+	"archlinux.org",
+	"aseprite.com",
+}
+
 func main() {
 	initDB()
 
@@ -129,8 +176,10 @@ func main() {
 		}
 		fmt.Printf("Starting crawl of %d websites from DB\n", len(queue))
 		for _, site := range queue {
-			crawlWithRobotsAndCrawlSite(site, maxPages, time.Second)
-			processed++
+			if !isForbiddenWebsite(site) {
+				crawlWithRobotsAndCrawlSite(site, maxPages, time.Second)
+				processed++
+			}
 			if processed >= safetyCap {
 				break
 			}

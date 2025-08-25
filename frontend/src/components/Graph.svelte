@@ -101,7 +101,6 @@
                 weight
             }));
 
-            container.innerHTML = '';
             loaded = true;
 
             const width = container.clientWidth || 800;
@@ -192,19 +191,48 @@
 
 <div bind:this={container} style="width:100%; height:100vh;">
     {#if !loaded}
-        <h1>{progressMessage}</h1>
+        <div class="overlay">
+            <h1>IndieSeas.net</h1>
+            <h2>{progressMessage}</h2>
+        </div>
+    {:else}
+        <div class="overlay">
+            <h1>IndieSeas.net</h1>
+            <a href="https://github.com/MrDaPoyo/indieseas" target="_blank">GitHub</a>
+        </div>
     {/if}
     <style>
-        h1 {
+        h1, h2 {
             color: white;
-            text-align: center;
-            margin: auto;
+            margin: 0;
         }
         
         div {
             height: 100vh;
             padding: auto;
             background-color: #10101a;
+        }
+
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: fit-content;
+            width: 100vw;
+            padding: auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-direction: row;
+            padding: 0 16px;
+            gap: 16px;
+            z-index: 100000000;
+            background: rgba(11, 16, 32, 0.8);
+            color: white;
+        }
+
+        .overlay h1 {
+            margin-inline: 0 auto;
         }
     </style>
 </div>
