@@ -146,7 +146,7 @@
 				.attr("stroke", "#6b7280")
 				.attr("stroke-opacity", 0.45)
 				.selectAll("line")
-				.data(links)
+				.data([])
 				.join("line")
 				.attr("stroke-width", 1.5);
 
@@ -173,36 +173,37 @@
 
 			const counts = nodes.map((d) => d.count);
 			const nonZeroCounts = counts.filter((c) => c > 0);
-			const STRAY_SCALE = 0.6;
+			const STRAY_SCALE = 0.4;
 			const baseScale = nonZeroCounts.length
 				? d3
-						.scaleSqrt()
+						.scalePow()
+						.exponent(2)
 						.domain([1, Math.max(...nonZeroCounts)])
-						.range([0.9, 2.0])
+						.range([0.6, 5.0])
 				: () => 1;
-			const getScale = (d) =>
-				d.count === 0 ? STRAY_SCALE : baseScale(d.count);
-
-			const simulation = d3
-				.forceSimulation(nodes)
-				.force(
-					"link",
-					d3
-						.forceLink(links)
-						.id((d) => d.id)
-						.distance(340)
-						.strength(0.06),
-				)
-				.force("charge", d3.forceManyBody().strength(-220))
-				.force("center", d3.forceCenter(width / 2, height / 2))
-				.force(
-					"collision",
-					d3
-						.forceCollide()
-						.radius((d) => (BUTTON_W / 2) * getScale(d) + 8)
-						.strength(0.7),
-				)
-				.on("tick", ticked);
+ 			const getScale = (d) =>
+ 				d.count === 0 ? STRAY_SCALE : baseScale(d.count);
+ 
+ 			const simulation = d3
+ 				.forceSimulation(nodes)
+ 				.force(
+ 					"link",
+ 					d3
+ 						.forceLink(links)
+ 						.id((d) => d.id)
+ 						.distance(340)
+ 						.strength(0.06),
+ 				)
+ 				.force("charge", d3.forceManyBody().strength(-220))
+ 				.force("center", d3.forceCenter(width / 2, height / 2))
+ 				.force(
+ 					"collision",
+ 					d3
+ 						.forceCollide()
+ 						.radius((d) => (BUTTON_W / 2) * getScale(d) + 12)
+ 						.strength(0.9),
+ 				)
+ 				.on("tick", ticked);
 
 			function ticked() {
 				link.attr("x1", (d) => d.source.x)
