@@ -18,7 +18,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-var fetchedImages = make(map[string]struct{})
+var fetchedImages = make(map[string]bool)
 
 func isIgnoredLink(s string) bool {
 	ls := strings.ToLower(strings.TrimSpace(s))
@@ -166,26 +166,30 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 			}
 
 			if hasImageBeenScrapedBefore(norm) {
-				foundButtons = append(foundButtons, Button{
-					Link:    norm,
-					LinksTo: linksTo,
-					FoundOn: baseURL.String(),
-				})
+				if isBtn, ok := fetchedImages[norm]; ok && isBtn {
+					foundButtons = append(foundButtons, Button{
+						Link:    norm,
+						LinksTo: linksTo,
+						FoundOn: baseURL.String(),
+					})
+				}
 				continue
 			}
 
-			if _, exists := fetchedImages[norm]; exists {
-				foundButtons = append(foundButtons, Button{
-					Link:    norm,
-					LinksTo: linksTo,
-					FoundOn: baseURL.String(),
-				})
+			if isBtn, exists := fetchedImages[norm]; exists {
+				if isBtn {
+					foundButtons = append(foundButtons, Button{
+						Link:    norm,
+						LinksTo: linksTo,
+						FoundOn: baseURL.String(),
+					})
+				}
 				continue
 			}
 
-			fetchedImages[norm] = struct{}{}
 			imageData := downloadImage(norm)
 			if verifyImageSize(imageData) {
+				fetchedImages[norm] = true
 				btn := Button{
 					Value:   imageData,
 					Link:    norm,
@@ -195,6 +199,8 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 					btn.LinksTo = linksTo
 				}
 				foundButtons = append(foundButtons, btn)
+			} else {
+				fetchedImages[norm] = false
 			}
 		}
 
@@ -381,26 +387,30 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 		}
 
 		if hasImageBeenScrapedBefore(norm) {
-			foundButtons = append(foundButtons, Button{
-				Link:    norm,
-				LinksTo: linksTo,
-				FoundOn: baseURL.String(),
-			})
+			if isBtn, ok := fetchedImages[norm]; ok && isBtn {
+				foundButtons = append(foundButtons, Button{
+					Link:    norm,
+					LinksTo: linksTo,
+					FoundOn: baseURL.String(),
+				})
+			}
 			continue
 		}
 
-		if _, exists := fetchedImages[norm]; exists {
-			foundButtons = append(foundButtons, Button{
-				Link:    norm,
-				LinksTo: linksTo,
-				FoundOn: baseURL.String(),
-			})
+		if isBtn, exists := fetchedImages[norm]; exists {
+			if isBtn {
+				foundButtons = append(foundButtons, Button{
+					Link:    norm,
+					LinksTo: linksTo,
+					FoundOn: baseURL.String(),
+				})
+			}
 			continue
 		}
 
-		fetchedImages[norm] = struct{}{}
 		imageData := downloadImage(norm)
 		if verifyImageSize(imageData) {
+			fetchedImages[norm] = true
 			btn := Button{
 				Value:   imageData,
 				Link:    norm,
@@ -410,6 +420,8 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 				btn.LinksTo = linksTo
 			}
 			foundButtons = append(foundButtons, btn)
+		} else {
+			fetchedImages[norm] = false
 		}
 	}
 
