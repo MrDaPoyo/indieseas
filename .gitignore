@@ -12,6 +12,7 @@ indiescraper/.env
 api/target
 api/.env
 scraper/docker-compose.yml
+scraper/scraper.exe
 
 # output
 out

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -10,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -64,7 +66,186 @@ func isIgnoredLink(s string) bool {
 	return strings.Contains(ls, "cdn-cgi")
 }
 
+type WorkerButton struct {
+	Src     string  `json:"src"`
+	LinksTo *string `json:"links_to"`
+	Alt     string  `json:"alt"`
+	Title   string  `json:"title"`
+}
+
+type WorkerLink struct {
+	Href string `json:"href"`
+	Text string `json:"text"`
+}
+
+type WorkerResponse struct {
+	Buttons     []WorkerButton `json:"buttons"`
+	Title       string         `json:"title"`
+	Description string         `json:"description"`
+	RawText     string         `json:"rawText"`
+	Links       []WorkerLink   `json:"links"`
+}
+
+func fetchThroughWorker(target string) (*WorkerResponse, error) {
+	base := strings.TrimSpace(os.Getenv("SCRAPER_WORKER"))
+	if base == "" {
+		return nil, fmt.Errorf("SCRAPER_WORKER not set")
+	}
+
+	full := fmt.Sprintf("%s%s", base, url.QueryEscape(target))
+
+	client := &http.Client{Timeout: 20 * time.Second}
+	req, err := http.NewRequest("GET", full, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "indieseas")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("worker returned %s", resp.Status)
+	}
+
+	var out WorkerResponse
+	dec := json.NewDecoder(resp.Body)
+	if err := dec.Decode(&out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func scrapeSinglePath(path string) (sameHostLinks []string) {
+	workerResp, werr := fetchThroughWorker(path)
+
+	baseURL, _ := url.Parse(path)
+	if baseURL == nil {
+		baseURL, _ = url.Parse("http://example.com/")
+	}
+
+	if werr == nil && workerResp != nil {
+		_ = markPathAsScraped(path)
+
+		fmt.Println("----------")
+
+		var foundButtons []Button
+		seen := make(map[string]struct{})
+
+		for _, wb := range workerResp.Buttons {
+			raw := strings.TrimSpace(wb.Src)
+			if raw == "" || !isValidURL(raw) || isIgnoredLink(raw) {
+				continue
+			}
+
+			norm, ok := normalizeImageURL(baseURL, raw)
+			if !ok || isIgnoredLink(norm) {
+				continue
+			}
+
+			if _, exists := seen[norm]; exists {
+				continue
+			}
+			seen[norm] = struct{}{}
+
+			linksTo := ""
+			if wb.LinksTo != nil {
+				linksTo = strings.TrimSpace(*wb.LinksTo)
+			}
+			if linksTo != "" && !isIgnoredLink(linksTo) {
+				if ah, err := url.Parse(linksTo); err == nil {
+					abs := baseURL.ResolveReference(ah)
+					if !isIgnoredLink(abs.String()) && abs.Host != "" && !strings.EqualFold(abs.Host, baseURL.Host) {
+						linksTo = abs.String()
+						ensureWebsiteQueued(linksTo)
+					}
+				}
+			}
+
+			if hasImageBeenScrapedBefore(norm) {
+				foundButtons = append(foundButtons, Button{
+					Link:    norm,
+					LinksTo: linksTo,
+					FoundOn: baseURL.String(),
+				})
+				continue
+			}
+
+			if _, exists := fetchedImages[norm]; exists {
+				foundButtons = append(foundButtons, Button{
+					Link:    norm,
+					LinksTo: linksTo,
+					FoundOn: baseURL.String(),
+				})
+				continue
+			}
+
+			fetchedImages[norm] = struct{}{}
+			imageData := downloadImage(norm)
+			if verifyImageSize(imageData) {
+				btn := Button{
+					Value:   imageData,
+					Link:    norm,
+					FoundOn: baseURL.String(),
+				}
+				if linksTo != "" {
+					btn.LinksTo = linksTo
+				}
+				foundButtons = append(foundButtons, btn)
+			}
+		}
+
+		upsertButtons(foundButtons)
+
+		baseHost := strings.ToLower(baseURL.Hostname())
+		seenLinks := make(map[string]struct{})
+		for _, wl := range workerResp.Links {
+			href := strings.TrimSpace(wl.Href)
+			if href == "" || isIgnoredLink(href) {
+				continue
+			}
+			norm, ok := normalizePageURL(baseURL, href)
+			if !ok || isIgnoredLink(norm) {
+				continue
+			}
+			u, err := url.Parse(norm)
+			if err != nil {
+				continue
+			}
+			if strings.ToLower(u.Hostname()) != baseHost {
+				ensureWebsiteQueued(norm)
+				continue
+			}
+			if _, dup := seenLinks[norm]; dup {
+				continue
+			}
+			seenLinks[norm] = struct{}{}
+			sameHostLinks = append(sameHostLinks, norm)
+		}
+
+		priorityKeywords := []string{"/buttons", "/links", "/outbount", "/sitemap", "/about"}
+		var prioritized []string
+		var others []string
+		for _, l := range sameHostLinks {
+			ll := strings.ToLower(l)
+			matched := false
+			for _, kw := range priorityKeywords {
+				if strings.Contains(ll, kw) {
+					prioritized = append(prioritized, l)
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				others = append(others, l)
+			}
+		}
+		return append(prioritized, others...)
+	}
+
 	resp, err := http.Get(path)
 	if err != nil {
 		fmt.Printf("Error fetching %s: %v\n", path, err)
@@ -135,7 +316,7 @@ func scrapeSinglePath(path string) (sameHostLinks []string) {
 	fmt.Println("----------")
 
 	var foundButtons []Button
-	baseURL := resp.Request.URL
+	baseURL = resp.Request.URL
 	seen := make(map[string]struct{})
 
 	for _, img := range totalImages {
