@@ -343,3 +343,11 @@ func retrieveWebsitesToScrape() []string {
 	}
 	return roots
 }
+
+func getStats() (int64, int64, int64) {
+	var totalButtons, totalWebsites, totalPages int64
+	db.Model(&Button{}).Count(&totalButtons)
+	db.Model(&Website{}).Count(&totalWebsites)
+	db.Model(&ScrapedPages{}).Count(&totalPages)
+	return totalButtons, totalWebsites, totalPages
+}

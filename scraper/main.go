@@ -159,6 +159,14 @@ var FORBIDDEN_WEBSITES = []string{
 func main() {
 	initDB()
 
+	if len(os.Args) > 1 && os.Args[1] == "--stats" {
+		totalButtons, totalWebsites, totalPages := getStats()
+		fmt.Printf("Total buttons: %d\n", totalButtons)
+		fmt.Printf("Total websites: %d\n", totalWebsites)
+		fmt.Printf("Total pages: %d\n", totalPages)
+		return
+	}
+
 	var maxPages int = 75
 	var safetyCap int = 1000
 
