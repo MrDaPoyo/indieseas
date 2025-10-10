@@ -8,6 +8,7 @@ port = 8787
 
 [vars]
 SERVER_API = "https://api.indieseas.net"
+API_TOKEN = "CHANGE_ME6969colon-three"
 LOG_LEVEL = "info"
 
 [env.dev.vars]

@@ -22,7 +22,7 @@ export default {
       const now = Date.now();
       if (!cachedUrlList || now - lastCacheTime > 15 * 60 * 1000) {
         const listRes = await fetch(`${env.SERVER_API}/api/url-list`, {
-          headers: { "Authorization": `Bearer ${env.SECRET}` },
+          headers: { "Authorization": `Bearer ${env.API_TOKEN}` },
         });
 
         if (!listRes.ok)
@@ -73,7 +73,7 @@ export default {
               "X-Source-Url": assetUrl,
               "X-Page-Url": base.href,
               "X-Status-Code": res.status.toString(),
-              "Authorization": `Bearer ${env.SECRET}`,
+              "Authorization": `Bearer ${env.API_TOKEN}`,
             },
             body: res.body,
           });
