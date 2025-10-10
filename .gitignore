@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # dependencies (bun install)
 node_modules
 *.db
@@ -47,3 +48,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Finder (MacOS) folder config
 .DS_Store
+=======
+.wrangler
+>>>>>>> 93a0a3d (worker should be working. pushing to test)
