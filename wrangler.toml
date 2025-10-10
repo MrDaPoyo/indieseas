@@ -1,0 +1,16 @@
+name = "indieseas-worker"
+main = "src/index.js"
+compatibility_date = "2025-10-10"
+type = "javascript"
+
+[dev]
+port = 8787
+
+[vars]
+SERVER_API = "https://api.indieseas.net"
+LOG_LEVEL = "info"
+
+[env.dev.vars]
+SERVER_API = "http://localhost:3000"
+LOG_LEVEL = "debug"
+API_TOKEN = "CHANGE_ME6969colon-three"

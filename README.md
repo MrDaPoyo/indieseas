@@ -1,1 +1,0 @@
-# IndieSeas.net - archive of indie websites
