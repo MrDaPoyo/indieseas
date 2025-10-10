@@ -13,6 +13,8 @@ api/target
 api/.env
 scraper/docker-compose.yml
 scraper/scraper.exe
+my-fs.bin
+fs
 
 # output
 out
