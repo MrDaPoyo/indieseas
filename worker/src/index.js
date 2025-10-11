@@ -88,11 +88,36 @@ export default {
         }
       }
 
+      const anchorRegex = /<a[^>]+href=["']([^"']+)["']/gi;
+      const pages = new Set();
+      let am;
+      const emailLike = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
+      while ((am = anchorRegex.exec(html))) {
+        const href = am[1].trim();
+        if (!href ||
+        href.startsWith('#') ||
+        href.startsWith('mailto:') ||
+        href.startsWith('tel:') ||
+        href.startsWith('javascript:') ||
+        href.startsWith('data:')) continue;
+
+        if (emailLike.test(href) && !href.includes('://') && !href.startsWith('//')) continue;
+
+        try {
+          const abs = new URL(href, base).href;
+          if (abs === base.href) continue;
+          if (urls.has(abs)) continue;
+          pages.add(abs);
+        } catch {}
+      }
+
       return Response.json({
         forwarded,
         skipped: urls.size - newUrls.length,
         totalAssets: urls.size,
         failed,
+        newfoundUrls: newUrls,
+        otherPages: [...pages],
       });
     } catch (err) {
       return new Response(`Error: ${err.message}`, { status: 500 });
